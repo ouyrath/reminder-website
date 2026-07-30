@@ -1,0 +1,370 @@
+import crypto from 'node:crypto';
+import { createClient } from '@supabase/supabase-js';
+import { Resend } from 'resend';
+import { DateTime } from 'luxon';
+
+const HOME_HTML = "<!doctype html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <meta name=\"description\" content=\"Create a free email reminder for an important event.\">\n  <title>Free Email Reminder</title>\n  <style>\n    :root{--ink:#14213d;--muted:#5c6b82;--line:#dce4ef;--blue:#2563eb;--blue2:#1d4ed8;--bg:#f4f7fb;--card:#fff;--good:#087f5b;--bad:#b42318}\n    *{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;color:var(--ink);background:linear-gradient(145deg,#edf4ff 0,#f8fafc 45%,#eefbf6 100%);min-height:100vh}\n    .shell{max-width:1120px;margin:auto;padding:32px 20px 56px}.nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:38px}.brand{display:flex;align-items:center;gap:11px;font-weight:850;font-size:20px}.logo{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:var(--blue);color:white;box-shadow:0 10px 24px rgba(37,99,235,.24)}.free{font-size:12px;background:#dcfce7;color:#166534;padding:6px 10px;border-radius:999px;font-weight:800}\n    .layout{display:grid;grid-template-columns:.86fr 1.14fr;gap:34px;align-items:start}.hero{padding:28px 8px}.eyebrow{display:inline-flex;align-items:center;gap:8px;color:var(--blue);font-weight:800;font-size:14px;letter-spacing:.02em}.hero h1{font-size:clamp(42px,6vw,68px);line-height:1.02;letter-spacing:-.045em;margin:16px 0 20px}.hero p{font-size:19px;line-height:1.65;color:var(--muted);max-width:560px}.points{display:grid;gap:15px;margin-top:30px}.point{display:flex;gap:12px;align-items:flex-start}.check{flex:0 0 auto;width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:#dcfce7;color:#087f5b;font-weight:900}.point strong{display:block;margin-bottom:3px}.point span{color:var(--muted);font-size:14px;line-height:1.45}\n    .card{background:rgba(255,255,255,.94);border:1px solid rgba(210,221,235,.95);border-radius:24px;padding:28px;box-shadow:0 24px 70px rgba(30,55,90,.13);backdrop-filter:blur(14px)}.card h2{margin:0 0 7px;font-size:26px}.sub{margin:0 0 24px;color:var(--muted);line-height:1.5}.grid{display:grid;grid-template-columns:1fr 1fr;gap:17px}.full{grid-column:1/-1}label{display:block;font-weight:750;font-size:14px;margin-bottom:7px}.hint{display:block;color:var(--muted);font-weight:500;font-size:12px;margin-top:5px}input,textarea,select{width:100%;font:inherit;color:var(--ink);background:#fff;border:1px solid #cfd9e7;border-radius:12px;padding:12px 13px;outline:none;transition:.18s}input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(37,99,235,.11)}textarea{min-height:112px;resize:vertical}.options{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.option{position:relative}.option input{position:absolute;opacity:0;pointer-events:none}.option label{margin:0;padding:13px 10px;border:1px solid #cfd9e7;border-radius:12px;text-align:center;cursor:pointer;font-size:13px;background:#fff}.option input:checked+label{border-color:var(--blue);background:#eff6ff;color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue)}button{width:100%;border:0;border-radius:13px;padding:14px 18px;background:var(--blue);color:#fff;font:inherit;font-weight:850;cursor:pointer;box-shadow:0 12px 24px rgba(37,99,235,.22);transition:.18s}button:hover{background:var(--blue2);transform:translateY(-1px)}button:disabled{opacity:.6;cursor:not-allowed;transform:none}.status{display:none;margin-top:15px;padding:13px 15px;border-radius:12px;font-size:14px;line-height:1.5}.status.good{display:block;background:#ecfdf3;color:var(--good);border:1px solid #abefc6}.status.bad{display:block;background:#fef3f2;color:var(--bad);border:1px solid #fecdca}.privacy{font-size:12px;color:var(--muted);line-height:1.55;margin:15px 0 0;text-align:center}.trap{position:absolute;left:-9999px;opacity:0;height:0;overflow:hidden}.foot{text-align:center;color:var(--muted);font-size:13px;margin-top:32px}\n    @media(max-width:820px){.layout{grid-template-columns:1fr}.hero{padding:8px}.hero h1{font-size:46px}.card{padding:22px}}@media(max-width:560px){.shell{padding:22px 14px 40px}.nav{margin-bottom:22px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.options{grid-template-columns:1fr}.hero h1{font-size:39px}.hero p{font-size:17px}.card{border-radius:18px}}\n  </style>\n</head>\n<body>\n  <main class=\"shell\">\n    <nav class=\"nav\"><div class=\"brand\"><span class=\"logo\">\u2713</span> Reminder</div><span class=\"free\">FREE TO USE</span></nav>\n    <section class=\"layout\">\n      <div class=\"hero\">\n        <div class=\"eyebrow\">\u25cf NEVER MISS AN IMPORTANT DATE</div>\n        <h1>Simple email reminders, right on time.</h1>\n        <p>Create one reminder and receive helpful emails one month, one week, and one day before your event.</p>\n        <div class=\"points\">\n          <div class=\"point\"><span class=\"check\">\u2713</span><div><strong>No account required</strong><span>Enter your event, confirm your email, and you are finished.</span></div></div>\n          <div class=\"point\"><span class=\"check\">\u2713</span><div><strong>Your time zone matters</strong><span>Event dates are stored securely and interpreted in the time zone you choose.</span></div></div>\n          <div class=\"point\"><span class=\"check\">\u2713</span><div><strong>Easy cancellation</strong><span>Every reminder email includes a cancellation link.</span></div></div>\n        </div>\n      </div>\n\n      <form class=\"card\" id=\"reminderForm\" novalidate>\n        <h2>Create your reminder</h2>\n        <p class=\"sub\">We will send a confirmation email before activating it.</p>\n        <div class=\"grid\">\n          <div><label for=\"recipient_name\">Your name</label><input id=\"recipient_name\" name=\"recipient_name\" autocomplete=\"name\" maxlength=\"80\" required placeholder=\"David\"></div>\n          <div><label for=\"recipient_email\">Email address</label><input id=\"recipient_email\" name=\"recipient_email\" type=\"email\" autocomplete=\"email\" maxlength=\"254\" required placeholder=\"you@example.com\"></div>\n          <div class=\"full\"><label for=\"reminder_title\">Reminder title</label><input id=\"reminder_title\" name=\"reminder_title\" maxlength=\"120\" required placeholder=\"Business meeting\"></div>\n          <div class=\"full\"><label for=\"reminder_message\">Reminder details</label><textarea id=\"reminder_message\" name=\"reminder_message\" maxlength=\"1500\" required placeholder=\"Meet John to discuss the new business agreement.\"></textarea></div>\n          <div><label for=\"event_local\">Event date and time</label><input id=\"event_local\" name=\"event_local\" type=\"datetime-local\" required><span class=\"hint\">Choose the actual event time.</span></div>\n          <div><label for=\"timezone\">Time zone</label><select id=\"timezone\" name=\"timezone\" required></select><span class=\"hint\">Automatically detected; change it when needed.</span></div>\n          <div class=\"full\"><label>Send reminder emails</label><div class=\"options\">\n            <div class=\"option\"><input id=\"oneMonth\" type=\"checkbox\" checked><label for=\"oneMonth\">One month before</label></div>\n            <div class=\"option\"><input id=\"oneWeek\" type=\"checkbox\" checked><label for=\"oneWeek\">One week before</label></div>\n            <div class=\"option\"><input id=\"oneDay\" type=\"checkbox\" checked><label for=\"oneDay\">One day before</label></div>\n          </div></div>\n          <div class=\"trap\" aria-hidden=\"true\"><label for=\"website\">Website</label><input id=\"website\" name=\"website\" tabindex=\"-1\" autocomplete=\"off\"></div>\n          <div class=\"full\"><button id=\"submitButton\" type=\"submit\">Create free reminder</button><div id=\"status\" class=\"status\" role=\"status\" aria-live=\"polite\"></div><p class=\"privacy\">By submitting, you agree to receive the confirmation and reminder emails you selected. We use your information only to provide this reminder service.</p></div>\n        </div>\n      </form>\n    </section>\n    <footer class=\"foot\">Free email reminder service \u00b7 Confirmation required \u00b7 No password needed</footer>\n  </main>\n\n  <script>\n    const form = document.getElementById('reminderForm');\n    const statusBox = document.getElementById('status');\n    const button = document.getElementById('submitButton');\n    const zoneSelect = document.getElementById('timezone');\n    const eventInput = document.getElementById('event_local');\n\n    const detectedZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';\n    let zones = [detectedZone, 'UTC', 'America/Chicago', 'America/New_York', 'America/Denver', 'America/Los_Angeles', 'Pacific/Honolulu'];\n    if (typeof Intl.supportedValuesOf === 'function') zones = Intl.supportedValuesOf('timeZone');\n    [...new Set(zones)].forEach(zone => {\n      const option = document.createElement('option'); option.value = zone; option.textContent = zone.replaceAll('_', ' ');\n      if (zone === detectedZone) option.selected = true; zoneSelect.appendChild(option);\n    });\n\n    const minDate = new Date(Date.now() + 30 * 60 * 1000);\n    const localIso = new Date(minDate.getTime() - minDate.getTimezoneOffset() * 60000).toISOString().slice(0,16);\n    eventInput.min = localIso;\n\n    form.addEventListener('submit', async (event) => {\n      event.preventDefault();\n      statusBox.className = 'status'; statusBox.textContent = '';\n      if (!form.reportValidity()) return;\n      if (![oneMonth, oneWeek, oneDay].some(box => box.checked)) {\n        statusBox.className = 'status bad'; statusBox.textContent = 'Choose at least one reminder time.'; return;\n      }\n\n      button.disabled = true; button.textContent = 'Creating reminder\u2026';\n      try {\n        const response = await fetch('/api/create-reminder', {\n          method: 'POST', headers: {'Content-Type':'application/json'},\n          body: JSON.stringify({\n            recipient_name: recipient_name.value,\n            recipient_email: recipient_email.value,\n            reminder_title: reminder_title.value,\n            reminder_message: reminder_message.value,\n            event_local: eventInput.value,\n            timezone: zoneSelect.value,\n            remind_one_month: oneMonth.checked,\n            remind_one_week: oneWeek.checked,\n            remind_one_day: oneDay.checked,\n            website: website.value\n          })\n        });\n        const data = await response.json().catch(() => ({}));\n        if (!response.ok) throw new Error(data.error || 'Unable to create reminder.');\n        statusBox.className = 'status good'; statusBox.textContent = data.message;\n        form.reset(); zoneSelect.value = detectedZone; eventInput.min = localIso;\n        oneMonth.checked = oneWeek.checked = oneDay.checked = true;\n      } catch (error) {\n        statusBox.className = 'status bad'; statusBox.textContent = error.message || 'Something went wrong. Please try again.';\n      } finally {\n        button.disabled = false; button.textContent = 'Create free reminder';\n      }\n    });\n  </script>\n</body>\n</html>\n";
+
+function requireEnv(name) {
+  const value = String(process.env[name] || '').trim();
+  if (!value) throw new Error(`Missing environment variable: ${name}`);
+  return value;
+}
+
+function getSupabase() {
+  return createClient(requireEnv('SUPABASE_URL'), requireEnv('SUPABASE_SECRET_KEY'), {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  });
+}
+
+function getResend() {
+  return new Resend(requireEnv('RESEND_API_KEY'));
+}
+
+function makeNumericId() {
+  return Date.now() * 1000 + crypto.randomInt(0, 1000);
+}
+
+function errorDetails(error) {
+  if (!error) return { message: 'Unknown error' };
+  const output = {};
+  for (const key of ['name', 'message', 'code', 'details', 'hint', 'status', 'statusCode', 'type']) {
+    const value = error[key];
+    if (value !== undefined && value !== null && value !== '') output[key] = value;
+  }
+  try {
+    for (const key of Object.getOwnPropertyNames(error)) {
+      if (!(key in output)) {
+        const value = error[key];
+        if (value !== undefined && value !== null && value !== '') output[key] = value;
+      }
+    }
+  } catch {}
+  if (Object.keys(output).length === 0) {
+    try { output.raw = JSON.stringify(error); }
+    catch { output.raw = String(error); }
+  }
+  return output;
+}
+
+function logFailure(stage, error, extra = {}) {
+  console.error('create-reminder failure', { stage, ...extra, error: errorDetails(error) });
+}
+
+function sendJson(res, status, body) {
+  res.status(status);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.end(JSON.stringify(body));
+}
+
+function sendHtml(res, status, title, message) {
+  res.status(status);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{margin:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#172033;display:grid;min-height:100vh;place-items:center;padding:24px;box-sizing:border-box}.card{max-width:620px;background:#fff;border:1px solid #dce4ef;border-radius:22px;padding:34px;box-shadow:0 18px 50px rgba(30,55,90,.12);text-align:center}h1{margin:0 0 14px;font-size:30px}p{font-size:17px;line-height:1.6;color:#526078}.button{display:inline-block;margin-top:14px;background:#2563eb;color:#fff;text-decoration:none;padding:13px 20px;border-radius:12px;font-weight:700}</style></head><body><main class="card"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><a class="button" href="/">Return to reminder website</a></main></body></html>`);
+}
+
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>'"]/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  })[char]);
+}
+
+function getBaseUrl(req) {
+  const configured = String(process.env.APP_URL || '').trim().replace(/\/$/, '');
+  if (configured) return configured;
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL || req.headers.host;
+  if (!host) throw new Error('Unable to determine website URL. Set APP_URL in Vercel.');
+  return host.startsWith('http') ? host.replace(/\/$/, '') : `https://${host}`;
+}
+
+function makeManageToken(id) {
+  const payload = Buffer.from(String(id), 'utf8').toString('base64url');
+  const signature = crypto.createHmac('sha256', requireEnv('TOKEN_SECRET')).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function readManageToken(token) {
+  if (typeof token !== 'string' || !token.includes('.')) return null;
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return null;
+  const expected = crypto.createHmac('sha256', requireEnv('TOKEN_SECRET')).update(payload).digest('base64url');
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const id = Number(Buffer.from(payload, 'base64url').toString('utf8'));
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+function getIpHash(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const raw = forwarded || String(req.socket?.remoteAddress || 'unknown');
+  return crypto.createHash('sha256').update(`${requireEnv('RATE_LIMIT_SALT')}:${raw}`).digest('hex');
+}
+
+function formatEvent(eventAt, timezone) {
+  const dt = DateTime.fromISO(eventAt, { setZone: true }).setZone(timezone);
+  return dt.isValid ? dt.toFormat("cccc, LLLL d, yyyy 'at' h:mm a ZZZZ") : eventAt;
+}
+
+function validTimezone(timezone) {
+  return typeof timezone === 'string' && timezone.length <= 80 && DateTime.now().setZone(timezone).isValid;
+}
+
+function safeEmail(value) {
+  const email = String(value || '').trim().toLowerCase();
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
+
+async function createReminder(req, res) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return sendJson(res, 405, { error: 'Method not allowed.' });
+  }
+
+  let stage = 'parse_request';
+  let reminderId = null;
+
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    if (String(body.website || '').trim()) {
+      return sendJson(res, 200, { ok: true, message: 'Please check your email to confirm the reminder.' });
+    }
+
+    stage = 'validate_request';
+    const recipientName = String(body.recipient_name || '').trim();
+    const recipientEmail = safeEmail(body.recipient_email);
+    const reminderTitle = String(body.reminder_title || '').trim();
+    const reminderMessage = String(body.reminder_message || '').trim();
+    const timezone = String(body.timezone || '').trim();
+    const eventLocal = String(body.event_local || '').trim();
+    const remindOneMonth = Boolean(body.remind_one_month);
+    const remindOneWeek = Boolean(body.remind_one_week);
+    const remindOneDay = Boolean(body.remind_one_day);
+
+    if (!recipientName || recipientName.length > 80) return sendJson(res, 400, { error: 'Enter a valid name.' });
+    if (!recipientEmail) return sendJson(res, 400, { error: 'Enter a valid email address.' });
+    if (!reminderTitle || reminderTitle.length > 120) return sendJson(res, 400, { error: 'Enter a reminder title of 120 characters or fewer.' });
+    if (!reminderMessage || reminderMessage.length > 1500) return sendJson(res, 400, { error: 'Enter reminder details of 1,500 characters or fewer.' });
+    if (!validTimezone(timezone)) return sendJson(res, 400, { error: 'Choose a valid time zone.' });
+    if (!remindOneMonth && !remindOneWeek && !remindOneDay) return sendJson(res, 400, { error: 'Choose at least one reminder time.' });
+
+    const event = DateTime.fromISO(eventLocal, { zone: timezone });
+    if (!event.isValid) return sendJson(res, 400, { error: 'Choose a valid event date and time.' });
+    if (event.toUTC() <= DateTime.utc().plus({ minutes: 15 })) {
+      return sendJson(res, 400, { error: 'The event must be at least 15 minutes in the future.' });
+    }
+
+    stage = 'initialize_services';
+    const supabase = getSupabase();
+    const ipHash = getIpHash(req);
+    const nowIso = DateTime.utc().toISO();
+    const since = DateTime.utc().minus({ hours: 24 }).toISO();
+
+    stage = 'rate_limit_ip';
+    const { count: ipCount, error: ipError } = await supabase.from('reminders').select('id', { count: 'exact', head: true }).eq('created_ip_hash', ipHash).gte('created_at', since);
+    if (ipError) throw ipError;
+
+    stage = 'rate_limit_email';
+    const { count: emailCount, error: emailError } = await supabase.from('reminders').select('id', { count: 'exact', head: true }).eq('recipient_email', recipientEmail).gte('created_at', since);
+    if (emailError) throw emailError;
+
+    if ((ipCount || 0) >= 5 || (emailCount || 0) >= 5) {
+      return sendJson(res, 429, { error: 'Too many reminder requests. Please try again tomorrow.' });
+    }
+
+    stage = 'insert_reminder';
+    reminderId = makeNumericId();
+    const eventAt = event.toUTC().toISO();
+    const { error: insertError } = await supabase.from('reminders').insert({
+      id: reminderId,
+      created_at: nowIso,
+      recipient_name: recipientName,
+      recipient_email: recipientEmail,
+      reminder_title: reminderTitle,
+      reminder_message: reminderMessage,
+      event_at: eventAt,
+      timezone,
+      remind_one_month: remindOneMonth,
+      remind_one_week: remindOneWeek,
+      remind_one_day: remindOneDay,
+      status: 'pending_verification',
+      created_ip_hash: ipHash
+    });
+    if (insertError) throw insertError;
+
+    stage = 'build_confirmation';
+    const token = makeManageToken(reminderId);
+    const baseUrl = getBaseUrl(req);
+    const verifyUrl = `${baseUrl}/api/verify-reminder?token=${encodeURIComponent(token)}`;
+    const cancelUrl = `${baseUrl}/api/cancel-reminder?token=${encodeURIComponent(token)}`;
+    const eventText = formatEvent(eventAt, timezone);
+
+    stage = 'send_confirmation_email';
+    const { data: emailData, error: sendError } = await getResend().emails.send({
+      from: requireEnv('EMAIL_FROM'),
+      to: [recipientEmail],
+      subject: `Confirm your reminder: ${reminderTitle}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;color:#172033;line-height:1.6"><h1 style="font-size:26px">Confirm your reminder</h1><p>Hello ${escapeHtml(recipientName)},</p><p>Please confirm that you requested this reminder:</p><div style="background:#f4f7fb;border:1px solid #dce4ef;border-radius:14px;padding:18px"><strong>${escapeHtml(reminderTitle)}</strong><br>${escapeHtml(eventText)}<br><span style="color:#526078">${escapeHtml(reminderMessage)}</span></div><p><a href="${verifyUrl}" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:13px 20px;border-radius:10px;font-weight:bold">Confirm reminder</a></p><p style="font-size:13px;color:#6b7280">This confirmation link expires after 48 hours. If you did not request this, you may ignore this email or <a href="${cancelUrl}">cancel it</a>.</p></div>`
+    }, { idempotencyKey: `verify-reminder/${reminderId}` });
+
+    if (sendError) throw sendError;
+    if (!emailData?.id) throw new Error('Resend returned no email ID.');
+    return sendJson(res, 201, { ok: true, message: 'Please check your email and tap “Confirm reminder.”' });
+  } catch (error) {
+    logFailure(stage, error, { reminderId });
+    if (reminderId && stage === 'send_confirmation_email') {
+      try { await getSupabase().from('reminders').delete().eq('id', reminderId); }
+      catch (cleanupError) { logFailure('cleanup_failed_reminder', cleanupError, { reminderId }); }
+    }
+    const publicCode = {
+      rate_limit_ip: 'DB-RATE-IP', rate_limit_email: 'DB-RATE-EMAIL', insert_reminder: 'DB-INSERT',
+      send_confirmation_email: 'EMAIL-SEND', initialize_services: 'CONFIG'
+    }[stage] || 'SERVER';
+    return sendJson(res, 500, { error: `We could not create the reminder. Error code: ${publicCode}.` });
+  }
+}
+
+async function verifyReminder(req, res, url) {
+  if (req.method !== 'GET') return sendHtml(res, 405, 'Not allowed', 'This link only supports a normal browser visit.');
+  try {
+    const id = readManageToken(String(url.searchParams.get('token') || ''));
+    if (!id) return sendHtml(res, 400, 'Invalid link', 'This confirmation link is invalid.');
+    const supabase = getSupabase();
+    const { data: row, error } = await supabase.from('reminders').select('id, status, created_at, event_at').eq('id', id).single();
+    if (error || !row) return sendHtml(res, 404, 'Reminder not found', 'This reminder no longer exists.');
+    if (row.status === 'cancelled') return sendHtml(res, 200, 'Reminder cancelled', 'This reminder has already been cancelled.');
+    if (row.status === 'active') return sendHtml(res, 200, 'Already confirmed', 'Your reminder is active. No further action is needed.');
+    const created = DateTime.fromISO(row.created_at, { setZone: true });
+    if (created.plus({ hours: 48 }) < DateTime.utc()) {
+      await supabase.from('reminders').update({ status: 'expired' }).eq('id', id);
+      return sendHtml(res, 410, 'Confirmation expired', 'This confirmation link expired. Please create the reminder again.');
+    }
+    if (DateTime.fromISO(row.event_at, { setZone: true }) <= DateTime.utc()) {
+      await supabase.from('reminders').update({ status: 'expired' }).eq('id', id);
+      return sendHtml(res, 410, 'Event has passed', 'The event date has already passed. Please create a new reminder.');
+    }
+    const { error: updateError } = await supabase.from('reminders').update({ status: 'active', verified_at: new Date().toISOString() }).eq('id', id);
+    if (updateError) throw updateError;
+    return sendHtml(res, 200, 'Reminder confirmed', 'Your reminder is active. We will email you on the reminder dates you selected.');
+  } catch (error) {
+    console.error('verify-reminder error', errorDetails(error));
+    return sendHtml(res, 500, 'Something went wrong', 'We could not confirm the reminder. Please try again.');
+  }
+}
+
+async function cancelReminder(req, res, url) {
+  if (req.method !== 'GET') return sendHtml(res, 405, 'Not allowed', 'This link only supports a normal browser visit.');
+  try {
+    const id = readManageToken(String(url.searchParams.get('token') || ''));
+    if (!id) return sendHtml(res, 400, 'Invalid link', 'This cancellation link is invalid.');
+    const { error } = await getSupabase().from('reminders').update({ status: 'cancelled' }).eq('id', id);
+    if (error) throw error;
+    return sendHtml(res, 200, 'Reminder cancelled', 'You will not receive any more emails for this reminder.');
+  } catch (error) {
+    console.error('cancel-reminder error', errorDetails(error));
+    return sendHtml(res, 500, 'Something went wrong', 'We could not cancel the reminder. Please try again.');
+  }
+}
+
+const reminderKinds = [
+  { flag: 'remind_one_month', sent: 'one_month_sent_at', label: 'One month before', subtract: { months: 1 } },
+  { flag: 'remind_one_week', sent: 'one_week_sent_at', label: 'One week before', subtract: { days: 7 } },
+  { flag: 'remind_one_day', sent: 'one_day_sent_at', label: 'One day before', subtract: { days: 1 } }
+];
+
+async function sendReminders(req, res) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
+  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    return sendJson(res, 401, { error: 'Unauthorized.' });
+  }
+  try {
+    const supabase = getSupabase();
+    const resend = getResend();
+    const nowUtc = DateTime.utc();
+    const { data: reminders, error } = await supabase.from('reminders').select('*').eq('status', 'active').order('event_at', { ascending: true }).limit(1000);
+    if (error) throw error;
+    let sent = 0;
+    let completed = 0;
+    const failures = [];
+    for (const row of reminders || []) {
+      try {
+        if (!validTimezone(row.timezone)) throw new Error('Invalid stored time zone.');
+        const eventLocal = DateTime.fromISO(row.event_at, { setZone: true }).setZone(row.timezone);
+        const nowLocal = nowUtc.setZone(row.timezone);
+        const today = nowLocal.startOf('day');
+        const createdLocal = DateTime.fromISO(row.created_at, { setZone: true }).setZone(row.timezone);
+        if (eventLocal <= nowLocal) {
+          await supabase.from('reminders').update({ status: 'completed' }).eq('id', row.id);
+          completed += 1;
+          continue;
+        }
+        for (const kind of reminderKinds) {
+          if (!row[kind.flag] || row[kind.sent]) continue;
+          const dueDay = eventLocal.minus(kind.subtract).startOf('day');
+          if (!today.hasSame(dueDay, 'day') || createdLocal > dueDay.endOf('day')) continue;
+          const token = makeManageToken(row.id);
+          const cancelUrl = `${getBaseUrl(req)}/api/cancel-reminder?token=${encodeURIComponent(token)}`;
+          const eventText = formatEvent(row.event_at, row.timezone);
+          const { error: sendError } = await resend.emails.send({
+            from: requireEnv('EMAIL_FROM'),
+            to: [row.recipient_email],
+            subject: `Reminder: ${row.reminder_title} — ${kind.label}`,
+            html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;color:#172033;line-height:1.6"><p>Hello ${escapeHtml(row.recipient_name)},</p><h1 style="font-size:26px;margin-bottom:8px">${escapeHtml(row.reminder_title)}</h1><p style="font-weight:bold;color:#2563eb">${escapeHtml(kind.label)}</p><div style="background:#f4f7fb;border:1px solid #dce4ef;border-radius:14px;padding:18px"><strong>${escapeHtml(eventText)}</strong><br><span style="color:#526078">${escapeHtml(row.reminder_message)}</span></div><p style="font-size:13px;color:#6b7280"><a href="${cancelUrl}">Cancel future emails for this reminder</a>.</p></div>`
+          }, { idempotencyKey: `reminder/${row.id}/${kind.sent}/${dueDay.toISODate()}` });
+          if (sendError) throw sendError;
+          const { error: updateError } = await supabase.from('reminders').update({ [kind.sent]: nowUtc.toISO() }).eq('id', row.id).is(kind.sent, null);
+          if (updateError) throw updateError;
+          sent += 1;
+        }
+      } catch (rowError) {
+        console.error(`Reminder ${row.id} failed`, errorDetails(rowError));
+        failures.push({ id: row.id, error: rowError?.message || String(rowError) });
+      }
+    }
+    return sendJson(res, 200, { ok: true, checked: reminders?.length || 0, sent, completed, failures });
+  } catch (error) {
+    console.error('send-reminders error', errorDetails(error));
+    return sendJson(res, 500, { error: 'Cron job failed.' });
+  }
+}
+
+async function health(req, res) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
+  const checks = {
+    supabaseUrl: Boolean(String(process.env.SUPABASE_URL || '').trim()),
+    supabaseSecretKey: Boolean(String(process.env.SUPABASE_SECRET_KEY || '').trim()),
+    resendApiKey: Boolean(String(process.env.RESEND_API_KEY || '').trim()),
+    emailFrom: Boolean(String(process.env.EMAIL_FROM || '').trim()),
+    appUrl: Boolean(String(process.env.APP_URL || '').trim()),
+    tokenSecret: Boolean(String(process.env.TOKEN_SECRET || '').trim()),
+    rateLimitSalt: Boolean(String(process.env.RATE_LIMIT_SALT || '').trim()),
+    cronSecret: Boolean(String(process.env.CRON_SECRET || '').trim())
+  };
+  try {
+    const { error } = await getSupabase().from('reminders').select('id', { head: true, count: 'exact' });
+    if (error) return sendJson(res, 500, { ok: false, checks, database: errorDetails(error) });
+    return sendJson(res, 200, { ok: Object.values(checks).every(Boolean), checks, database: 'connected' });
+  } catch (error) {
+    return sendJson(res, 500, { ok: false, checks, database: errorDetails(error) });
+  }
+}
+
+export default async function handler(req, res) {
+  const url = new URL(req.url || '/', `https://${req.headers.host || 'localhost'}`);
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
+    res.status(200);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    return res.end(HOME_HTML);
+  }
+  if (path === '/api/create-reminder') return createReminder(req, res);
+  if (path === '/api/verify-reminder') return verifyReminder(req, res, url);
+  if (path === '/api/cancel-reminder') return cancelReminder(req, res, url);
+  if (path === '/api/send-reminders') return sendReminders(req, res);
+  if (path === '/api/health') return health(req, res);
+  return sendJson(res, 404, { error: 'Not found.' });
+}

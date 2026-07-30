@@ -1,0 +1,14 @@
+{
+  "name": "reminder-website",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "luxon": "^3.7.2",
+    "resend": "^6.1.2"
+  }
+}
