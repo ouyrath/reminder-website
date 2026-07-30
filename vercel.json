@@ -2,9 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "builds": [
-    { "src": "server.js", "use": "@vercel/node" }
+    { "src": "server.js", "use": "@vercel/node" },
+    { "src": "test-five-min.js", "use": "@vercel/node" }
   ],
   "routes": [
+    { "src": "/test-5-min", "dest": "/test-five-min.js" },
     { "src": "/(.*)", "dest": "/server.js" }
   ],
   "crons": [
