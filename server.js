@@ -1,6 +1,12 @@
 import crypto from 'node:crypto';
 import { Resend } from 'resend';
 import { DateTime } from 'luxon';
+import { createClient } from '@supabase/supabase-js';
+
+const ATTACHMENT_BUCKET = 'reminder-encrypted-files';
+const MAX_ATTACHMENTS = 5;
+const MAX_ENCRYPTED_FILE_BYTES = 11 * 1024 * 1024;
+const MAX_ENCRYPTED_TOTAL_BYTES = 27 * 1024 * 1024;
 
 const HOME_HTML = `<!doctype html>
 <html lang="en">
@@ -43,6 +49,10 @@ const HOME_HTML = `<!doctype html>
     .custom-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
     .custom-head input{width:19px;height:19px;margin:0}.custom-head label{margin:0;cursor:pointer}
     .custom.disabled{opacity:.62}.custom.disabled input[type="datetime-local"]{background:#f3f4f6}
+    .attachments{border:1px solid #d7e0ec;background:#f8fafc;border-radius:15px;padding:16px}
+    .attachments h3{margin:0 0 5px;font-size:17px}.attachments p{margin:0 0 13px;color:var(--muted);font-size:13px;line-height:1.5}
+    .password-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:13px}.file-summary{margin-top:9px;color:#46556e;font-size:13px;line-height:1.45}
+    .warning{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff7ed;color:#9a3412;font-size:12px;line-height:1.5;border:1px solid #fed7aa}
     button{width:100%;border:0;border-radius:13px;padding:14px 18px;background:var(--blue);color:#fff;font:inherit;font-weight:850;cursor:pointer;box-shadow:0 12px 24px rgba(37,99,235,.22)}
     button:hover{background:var(--blue2)}button:disabled{opacity:.6;cursor:not-allowed}
     .status{display:none;margin-top:15px;padding:13px 15px;border-radius:12px;font-size:14px;line-height:1.5}
@@ -51,7 +61,7 @@ const HOME_HTML = `<!doctype html>
     .privacy{font-size:12px;color:var(--muted);line-height:1.55;margin:15px 0 0;text-align:center}
     .trap{position:absolute;left:-9999px;opacity:0;height:0;overflow:hidden}.foot{text-align:center;color:var(--muted);font-size:13px;margin-top:32px}
     @media(max-width:820px){.layout{grid-template-columns:1fr}.hero{padding:8px}.hero h1{font-size:46px}.card{padding:22px}}
-    @media(max-width:560px){.shell{padding:22px 14px 40px}.nav{margin-bottom:22px;align-items:flex-start}.nav-actions{gap:7px}.my-link{padding:8px 10px;font-size:13px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.options{grid-template-columns:1fr}.hero h1{font-size:39px}.hero p{font-size:17px}.card{border-radius:18px}}
+    @media(max-width:560px){.shell{padding:22px 14px 40px}.nav{margin-bottom:22px;align-items:flex-start}.nav-actions{gap:7px}.my-link{padding:8px 10px;font-size:13px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.options{grid-template-columns:1fr}.password-grid{grid-template-columns:1fr}.hero h1{font-size:39px}.hero p{font-size:17px}.card{border-radius:18px}}
   </style>
 </head>
 <body>
@@ -93,6 +103,19 @@ const HOME_HTML = `<!doctype html>
             <div class="option"><input id="oneDay" type="checkbox"><label for="oneDay">One day before</label></div>
           </div></div>
 
+          <div class="full attachments">
+            <h3>Private encrypted attachments (optional)</h3>
+            <p>Upload up to 5 JPG, PNG, or WebP photos (5 MB each), or 1 PDF (10 MB). Files are encrypted in this browser before upload.</p>
+            <label for="attachment_files">Choose photos or one PDF</label>
+            <input id="attachment_files" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf">
+            <div id="fileSummary" class="file-summary">No files selected.</div>
+            <div class="password-grid">
+              <div><label for="file_password">File password</label><input id="file_password" type="password" minlength="10" maxlength="128" autocomplete="new-password" placeholder="At least 10 characters"></div>
+              <div><label for="file_password_confirm">Confirm file password</label><input id="file_password_confirm" type="password" minlength="10" maxlength="128" autocomplete="new-password" placeholder="Enter it again"></div>
+            </div>
+            <div class="warning"><strong>Important:</strong> This password is never sent to us and cannot be recovered. Users must enter it again to open the files.</div>
+          </div>
+
           <div class="trap" aria-hidden="true"><label for="website">Website</label><input id="website" tabindex="-1" autocomplete="off"></div>
           <div class="full"><button id="submitButton" type="submit">Create free reminder</button><div id="status" class="status" role="status" aria-live="polite"></div><p class="privacy">By submitting, you agree to receive the confirmation and reminder emails you selected. We use your information only to provide this reminder service.</p></div>
         </div>
@@ -113,6 +136,13 @@ const HOME_HTML = `<!doctype html>
     const oneMonth = document.getElementById('oneMonth');
     const oneWeek = document.getElementById('oneWeek');
     const oneDay = document.getElementById('oneDay');
+    const filesInput = document.getElementById('attachment_files');
+    const fileSummary = document.getElementById('fileSummary');
+    const passwordInput = document.getElementById('file_password');
+    const passwordConfirmInput = document.getElementById('file_password_confirm');
+    const PBKDF2_ITERATIONS = 310000;
+    const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+    const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
     const detectedZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     let zones = [detectedZone, 'UTC', 'America/Chicago', 'America/New_York', 'America/Denver', 'America/Los_Angeles', 'Pacific/Honolulu'];
@@ -142,9 +172,117 @@ const HOME_HTML = `<!doctype html>
       customBox.classList.toggle('disabled', !customEnabled.checked);
     }
 
+    function selectedFiles() {
+      return Array.from(filesInput.files || []);
+    }
+
+    function isPdf(file) {
+      return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    }
+
+    function isImage(file) {
+      return ['image/jpeg','image/png','image/webp'].includes(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name);
+    }
+
+    function validateFiles() {
+      const files = selectedFiles();
+      if (!files.length) return '';
+      const pdfs = files.filter(isPdf);
+      const images = files.filter(isImage);
+      if (pdfs.length) {
+        if (files.length !== 1 || pdfs.length !== 1) return 'Choose either one PDF or up to five photos—not both.';
+        if (pdfs[0].size > MAX_PDF_BYTES) return 'The PDF must be 10 MB or smaller.';
+      } else {
+        if (images.length !== files.length) return 'Only JPG, PNG, WebP, or PDF files are allowed.';
+        if (images.length > 5) return 'You may upload up to five photos.';
+        if (images.some(function(file){ return file.size > MAX_IMAGE_BYTES; })) return 'Each photo must be 5 MB or smaller.';
+      }
+      if (!window.crypto?.subtle) return 'This browser does not support secure file encryption. Open the site in Chrome, Edge, Safari, or Firefox over HTTPS.';
+      if (passwordInput.value.length < 10) return 'Create a file password with at least 10 characters.';
+      if (passwordInput.value !== passwordConfirmInput.value) return 'The two file passwords do not match.';
+      return '';
+    }
+
+    function updateFileSummary() {
+      const files = selectedFiles();
+      if (!files.length) {
+        fileSummary.textContent = 'No files selected.';
+        passwordInput.required = false;
+        passwordConfirmInput.required = false;
+        return;
+      }
+      passwordInput.required = true;
+      passwordConfirmInput.required = true;
+      const total = files.reduce(function(sum, file){ return sum + file.size; }, 0);
+      fileSummary.textContent = files.length + ' file' + (files.length === 1 ? '' : 's') + ' selected · ' + (total / 1024 / 1024).toFixed(1) + ' MB before encryption.';
+    }
+
+    function concatBytes(parts) {
+      const length = parts.reduce(function(total, part){ return total + part.byteLength; }, 0);
+      const output = new Uint8Array(length);
+      let offset = 0;
+      parts.forEach(function(part){ output.set(new Uint8Array(part.buffer || part, part.byteOffset || 0, part.byteLength), offset); offset += part.byteLength; });
+      return output;
+    }
+
+    async function deriveEncryptionKey(password, salt) {
+      const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+        material,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt']
+      );
+    }
+
+    async function encryptFiles(files, password) {
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const key = await deriveEncryptionKey(password, salt);
+      const magic = new TextEncoder().encode('RME1');
+      const iterationBytes = new Uint8Array(4);
+      new DataView(iterationBytes.buffer).setUint32(0, PBKDF2_ITERATIONS, false);
+      const encrypted = [];
+
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const metadataBytes = new TextEncoder().encode(JSON.stringify({
+          name: file.name,
+          type: file.type || (isPdf(file) ? 'application/pdf' : 'application/octet-stream'),
+          size: file.size
+        }));
+        const fileBytes = new Uint8Array(await file.arrayBuffer());
+        const metadataLength = new Uint8Array(4);
+        new DataView(metadataLength.buffer).setUint32(0, metadataBytes.byteLength, false);
+        const plaintext = concatBytes([metadataLength, metadataBytes, fileBytes]);
+        const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext));
+        const container = concatBytes([magic, iterationBytes, salt, iv, ciphertext]);
+        encrypted.push({ slot: index + 1, blob: new Blob([container], { type: 'application/octet-stream' }), encrypted_size: container.byteLength });
+      }
+      return encrypted;
+    }
+
+    async function uploadEncryptedFile(ticket, encryptedFile) {
+      const formData = new FormData();
+      formData.append('file', encryptedFile.blob, 'encrypted-' + ticket.slot + '.rme');
+      formData.append('cacheControl', '0');
+      const response = await fetch(ticket.signed_url, {
+        method: 'PUT',
+        headers: { 'x-upsert': 'false' },
+        body: formData
+      });
+      if (!response.ok) {
+        const message = await response.text().catch(function(){ return ''; });
+        throw new Error('Attachment ' + ticket.slot + ' could not upload' + (message ? ': ' + message.slice(0, 120) : '.'));
+      }
+    }
+
     customEnabled.addEventListener('change', toggleCustom);
+    filesInput.addEventListener('change', updateFileSummary);
     updateMinimumDates();
     toggleCustom();
+    updateFileSummary();
 
     form.addEventListener('submit', async function(event) {
       event.preventDefault();
@@ -164,9 +302,23 @@ const HOME_HTML = `<!doctype html>
         return;
       }
 
+      const fileError = validateFiles();
+      if (fileError) {
+        statusBox.className = 'status bad';
+        statusBox.textContent = fileError;
+        return;
+      }
+
       button.disabled = true;
-      button.textContent = 'Creating reminder…';
       try {
+        const files = selectedFiles();
+        let encryptedFiles = [];
+        if (files.length) {
+          button.textContent = 'Encrypting files on this device…';
+          encryptedFiles = await encryptFiles(files, passwordInput.value);
+        }
+
+        button.textContent = 'Creating reminder…';
         const response = await fetch('/api/create-reminder', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
@@ -182,11 +334,33 @@ const HOME_HTML = `<!doctype html>
             remind_one_month: oneMonth.checked,
             remind_one_week: oneWeek.checked,
             remind_one_day: oneDay.checked,
+            attachments: encryptedFiles.map(function(item){ return { slot: item.slot, encrypted_size: item.encrypted_size }; }),
             website: document.getElementById('website').value
           })
         });
         const data = await response.json().catch(function(){ return {}; });
         if (!response.ok) throw new Error(data.error || 'Unable to create reminder.');
+
+        if (encryptedFiles.length) {
+          if (!Array.isArray(data.uploads) || !data.upload_token) throw new Error('The secure upload session was not created.');
+          for (const ticket of data.uploads) {
+            const encryptedFile = encryptedFiles.find(function(item){ return item.slot === ticket.slot; });
+            if (!encryptedFile) throw new Error('An encrypted attachment is missing.');
+            button.textContent = 'Uploading encrypted file ' + ticket.slot + ' of ' + data.uploads.length + '…';
+            await uploadEncryptedFile(ticket, encryptedFile);
+          }
+
+          button.textContent = 'Sending confirmation email…';
+          const finalizeResponse = await fetch('/api/finalize-attachments', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ token: data.upload_token })
+          });
+          const finalizeData = await finalizeResponse.json().catch(function(){ return {}; });
+          if (!finalizeResponse.ok) throw new Error(finalizeData.error || 'The encrypted files uploaded, but confirmation could not finish.');
+          data.message = finalizeData.message;
+        }
+
         statusBox.className = 'status good';
         statusBox.textContent = data.message;
         form.reset();
@@ -195,6 +369,7 @@ const HOME_HTML = `<!doctype html>
         oneMonth.checked = oneWeek.checked = oneDay.checked = false;
         toggleCustom();
         updateMinimumDates();
+        updateFileSummary();
       } catch (error) {
         statusBox.className = 'status bad';
         statusBox.textContent = error.message || 'Something went wrong. Please try again.';
@@ -245,6 +420,17 @@ function supabaseConfig() {
     url: requireEnv('SUPABASE_URL').replace(/\/+$/, ''),
     key: requireEnv('SUPABASE_SECRET_KEY')
   };
+}
+
+let storageAdminClient;
+function getStorageAdmin() {
+  if (!storageAdminClient) {
+    const { url, key } = supabaseConfig();
+    storageAdminClient = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+    });
+  }
+  return storageAdminClient;
 }
 
 async function supabaseRequest(path, options = {}) {
@@ -348,6 +534,117 @@ async function selectActiveReminders() {
   return Array.isArray(data) ? data : [];
 }
 
+async function insertAttachmentRows(rows) {
+  if (!rows.length) return;
+  await supabaseRequest('reminder_attachments', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: rows
+  });
+}
+
+async function selectAttachmentsByReminder(reminderId) {
+  const query = queryString({
+    select: '*',
+    reminder_id: 'eq.' + reminderId,
+    order: 'slot.asc',
+    limit: MAX_ATTACHMENTS
+  });
+  const { data } = await supabaseRequest('reminder_attachments?' + query);
+  return Array.isArray(data) ? data : [];
+}
+
+async function markAttachmentUploaded(id, size) {
+  const query = queryString({ id: 'eq.' + id });
+  await supabaseRequest('reminder_attachments?' + query, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: { uploaded_at: new Date().toISOString(), encrypted_size: size }
+  });
+}
+
+async function deleteAttachmentRowsForReminder(reminderId) {
+  const query = queryString({ reminder_id: 'eq.' + reminderId });
+  await supabaseRequest('reminder_attachments?' + query, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' }
+  });
+}
+
+async function deleteAttachmentsForReminder(reminderId) {
+  const rows = await selectAttachmentsByReminder(reminderId);
+  if (rows.length) {
+    const paths = rows.map(function(row){ return row.storage_path; });
+    const { error } = await getStorageAdmin().storage.from(ATTACHMENT_BUCKET).remove(paths);
+    if (error) throw error;
+    await deleteAttachmentRowsForReminder(reminderId);
+  }
+}
+
+async function createAttachmentUploadTickets(rows) {
+  const bucket = getStorageAdmin().storage.from(ATTACHMENT_BUCKET);
+  const tickets = [];
+  for (const row of rows) {
+    const { data, error } = await bucket.createSignedUploadUrl(row.storage_path);
+    if (error) throw error;
+    if (!data?.signedUrl) throw new Error('Supabase returned no signed upload URL.');
+    tickets.push({ id: row.id, slot: row.slot, signed_url: data.signedUrl });
+  }
+  return tickets;
+}
+
+async function verifyUploadedAttachments(reminderId, rows) {
+  const folder = String(reminderId);
+  const { data, error } = await getStorageAdmin().storage.from(ATTACHMENT_BUCKET).list(folder, { limit: 100 });
+  if (error) throw error;
+  const byName = new Map((data || []).map(function(item){ return [item.name, item]; }));
+  for (const row of rows) {
+    const name = row.storage_path.split('/').pop();
+    const object = byName.get(name);
+    const size = Number(object?.metadata?.size || object?.metadata?.contentLength || 0);
+    if (!object || !Number.isFinite(size) || size <= 0 || size > MAX_ENCRYPTED_FILE_BYTES) {
+      throw new Error('One or more encrypted attachments were not uploaded correctly.');
+    }
+    await markAttachmentUploaded(row.id, size);
+  }
+}
+
+async function selectCleanupReminders() {
+  const query = queryString({
+    select: 'id,status,created_at,event_at',
+    status: 'in.(pending_upload,pending_verification,cancelled,expired,completed)',
+    limit: 1000
+  });
+  const { data } = await supabaseRequest('reminders?' + query);
+  return Array.isArray(data) ? data : [];
+}
+
+async function cleanupExpiredAttachments(nowUtc = DateTime.utc()) {
+  const rows = await selectCleanupReminders();
+  let deleted = 0;
+  for (const row of rows) {
+    const created = DateTime.fromISO(row.created_at, { setZone: true });
+    const event = DateTime.fromISO(row.event_at, { setZone: true });
+    const shouldDelete =
+      row.status === 'cancelled' ||
+      row.status === 'expired' ||
+      (row.status === 'pending_upload' && created.plus({ hours: 2 }) < nowUtc) ||
+      (row.status === 'pending_verification' && created.plus({ hours: 48 }) < nowUtc) ||
+      (row.status === 'completed' && event.plus({ days: 30 }) < nowUtc);
+    if (!shouldDelete) continue;
+    try {
+      const attachments = await selectAttachmentsByReminder(row.id);
+      if (attachments.length) {
+        await deleteAttachmentsForReminder(row.id);
+        deleted += attachments.length;
+      }
+    } catch (error) {
+      console.error('Attachment cleanup failed', row.id, error?.message || error);
+    }
+  }
+  return deleted;
+}
+
 function safeEmail(value) {
   const email = String(value || '').trim().toLowerCase();
   if (email.length > 254) return '';
@@ -384,6 +681,34 @@ function readManageToken(token) {
   return parts[0];
 }
 
+function makeScopedToken(purpose, reminderId, ttlMinutes) {
+  const payload = Buffer.from(JSON.stringify({
+    v: 1,
+    purpose,
+    reminder_id: String(reminderId),
+    exp: Date.now() + ttlMinutes * 60 * 1000,
+    nonce: crypto.randomBytes(12).toString('base64url')
+  })).toString('base64url');
+  const signature = crypto.createHmac('sha256', requireEnv('TOKEN_SECRET')).update(payload).digest('base64url');
+  return payload + '.' + signature;
+}
+
+function readScopedToken(token, expectedPurpose) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 2) return null;
+  const expected = crypto.createHmac('sha256', requireEnv('TOKEN_SECRET')).update(parts[0]).digest('base64url');
+  const a = Buffer.from(parts[1]);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    if (payload.v !== 1 || payload.purpose !== expectedPurpose || !/^\d+$/.test(String(payload.reminder_id)) || payload.exp < Date.now()) return null;
+    return String(payload.reminder_id);
+  } catch {
+    return null;
+  }
+}
+
 function getIpHash(req) {
   const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   const ip = forwarded || String(req.socket?.remoteAddress || 'unknown');
@@ -408,6 +733,8 @@ function publicError(stage) {
     rate_limit_ip: 'DB-RATE-IP',
     rate_limit_email: 'DB-RATE-EMAIL',
     insert_reminder: 'DB-INSERT',
+    insert_attachments: 'DB-ATTACHMENTS',
+    create_upload_urls: 'STORAGE-UPLOAD',
     send_confirmation_email: 'EMAIL-SEND',
     initialize_services: 'CONFIG'
   })[stage] || 'SERVER';
@@ -420,6 +747,47 @@ function selectedReminderText({ eventAt, timezone, customAt, oneMonth, oneWeek, 
   if (oneWeek) items.push('One week before the event');
   if (oneDay) items.push('One day before the event');
   return items.join(' · ');
+}
+
+async function sendConfirmationEmail(row, req, attachmentCount = 0) {
+  const token = makeManageToken(row.id);
+  const baseUrl = getBaseUrl(req);
+  const verifyUrl = baseUrl + '/api/verify-reminder?token=' + encodeURIComponent(token);
+  const cancelUrl = baseUrl + '/api/cancel-reminder?token=' + encodeURIComponent(token);
+  const myRemindersUrl = baseUrl + '/my-reminders';
+  const eventText = formatDateTime(row.event_at, row.timezone);
+  const reminderText = selectedReminderText({
+    eventAt: row.event_at,
+    timezone: row.timezone,
+    customAt: row.custom_reminder_at,
+    oneMonth: row.remind_one_month,
+    oneWeek: row.remind_one_week,
+    oneDay: row.remind_one_day
+  });
+  const attachmentText = attachmentCount
+    ? '<p><strong>' + attachmentCount + ' encrypted attachment' + (attachmentCount === 1 ? '' : 's') + '</strong> will be available in My Reminders after confirmation. Your file password is not stored or included in email.</p>'
+    : '';
+
+  const { data, error } = await getResend().emails.send({
+    from: requireEnv('EMAIL_FROM'),
+    to: [row.recipient_email],
+    subject: 'Confirm your reminder: ' + row.reminder_title,
+    html: '<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;color:#172033;line-height:1.6"><h1 style="font-size:26px">Confirm your reminder</h1><p>Hello ' +
+      escapeHtml(row.recipient_name) +
+      ',</p><p>Please confirm that you requested this reminder:</p><div style="background:#f4f7fb;border:1px solid #dce4ef;border-radius:14px;padding:18px"><strong>' +
+      escapeHtml(row.reminder_title) +
+      '</strong><br>Event: ' + escapeHtml(eventText) + '<br>Reminder: ' +
+      escapeHtml(reminderText) +
+      '<br><span style="color:#526078">' +
+      escapeHtml(row.reminder_message) +
+      '</span></div>' + attachmentText + '<p><a href="' + verifyUrl +
+      '" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:13px 20px;border-radius:10px;font-weight:bold">Confirm reminder</a></p><p style="font-size:13px;color:#6b7280">This confirmation link expires after 48 hours. If you did not request this, you may ignore this email or <a href="' +
+      cancelUrl + '">cancel it</a>.</p><p style="font-size:14px"><a href="' + myRemindersUrl + '" style="color:#2563eb;font-weight:bold">View all of my reminders</a></p></div>'
+  }, { idempotencyKey: 'verify-reminder/' + row.id });
+
+  if (error) throw error;
+  if (!data?.id) throw new Error('Resend returned no email ID.');
+  return data.id;
 }
 
 async function scheduleCustomReminder(row, req, nowUtc = DateTime.utc()) {
@@ -499,6 +867,7 @@ async function createReminder(req, res) {
     const remindOneMonth = Boolean(body.remind_one_month);
     const remindOneWeek = Boolean(body.remind_one_week);
     const remindOneDay = Boolean(body.remind_one_day);
+    const attachments = Array.isArray(body.attachments) ? body.attachments : [];
 
     if (!recipientName || recipientName.length > 80) return sendJson(res, 400, { error: 'Enter a valid name.' });
     if (!recipientEmail) return sendJson(res, 400, { error: 'Enter a valid email address.' });
@@ -508,6 +877,19 @@ async function createReminder(req, res) {
     if (!remindCustom && !remindOneMonth && !remindOneWeek && !remindOneDay) {
       return sendJson(res, 400, { error: 'Choose at least one reminder time.' });
     }
+    if (attachments.length > MAX_ATTACHMENTS) return sendJson(res, 400, { error: 'You may upload up to five encrypted attachments.' });
+
+    let totalEncryptedBytes = 0;
+    const normalizedAttachments = attachments.map(function(item, index) {
+      const slot = Number(item?.slot);
+      const encryptedSize = Number(item?.encrypted_size);
+      if (slot !== index + 1 || !Number.isInteger(slot) || !Number.isInteger(encryptedSize) || encryptedSize <= 0 || encryptedSize > MAX_ENCRYPTED_FILE_BYTES) {
+        throw new Error('Invalid encrypted attachment information.');
+      }
+      totalEncryptedBytes += encryptedSize;
+      return { slot, encrypted_size: encryptedSize };
+    });
+    if (totalEncryptedBytes > MAX_ENCRYPTED_TOTAL_BYTES) return sendJson(res, 400, { error: 'The encrypted attachments are too large.' });
 
     const now = DateTime.utc();
     const event = DateTime.fromISO(eventLocal, { zone: timezone });
@@ -557,8 +939,7 @@ async function createReminder(req, res) {
     reminderId = makeNumericId();
     const eventAt = event.toUTC().toISO();
     const customAt = customReminder ? customReminder.toUTC().toISO() : null;
-
-    await insertReminder({
+    const reminderRow = {
       id: reminderId,
       created_at: nowIso,
       recipient_name: recipientName,
@@ -573,46 +954,39 @@ async function createReminder(req, res) {
       custom_reminder_at: customAt,
       custom_scheduled_at: null,
       custom_email_id: null,
-      status: 'pending_verification',
+      status: normalizedAttachments.length ? 'pending_upload' : 'pending_verification',
       created_ip_hash: ipHash
-    });
+    };
+    await insertReminder(reminderRow);
+
+    if (normalizedAttachments.length) {
+      stage = 'insert_attachments';
+      const attachmentRows = normalizedAttachments.map(function(item) {
+        const id = crypto.randomUUID();
+        return {
+          id,
+          reminder_id: reminderId,
+          slot: item.slot,
+          storage_path: String(reminderId) + '/' + id + '.rme',
+          encrypted_size: item.encrypted_size,
+          uploaded_at: null
+        };
+      });
+      await insertAttachmentRows(attachmentRows);
+
+      stage = 'create_upload_urls';
+      const uploads = await createAttachmentUploadTickets(attachmentRows);
+      return sendJson(res, 201, {
+        ok: true,
+        needs_upload: true,
+        upload_token: makeScopedToken('finalize-attachments', reminderId, 120),
+        uploads,
+        message: 'Your reminder was created. Uploading the encrypted attachments now.'
+      });
+    }
 
     stage = 'send_confirmation_email';
-    const token = makeManageToken(reminderId);
-    const baseUrl = getBaseUrl(req);
-    const verifyUrl = baseUrl + '/api/verify-reminder?token=' + encodeURIComponent(token);
-    const cancelUrl = baseUrl + '/api/cancel-reminder?token=' + encodeURIComponent(token);
-    const myRemindersUrl = baseUrl + '/my-reminders';
-    const eventText = formatDateTime(eventAt, timezone);
-    const reminderText = selectedReminderText({
-      eventAt,
-      timezone,
-      customAt,
-      oneMonth: remindOneMonth,
-      oneWeek: remindOneWeek,
-      oneDay: remindOneDay
-    });
-
-    const { data: emailData, error: sendError } = await getResend().emails.send({
-      from: requireEnv('EMAIL_FROM'),
-      to: [recipientEmail],
-      subject: 'Confirm your reminder: ' + reminderTitle,
-      html: '<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;color:#172033;line-height:1.6"><h1 style="font-size:26px">Confirm your reminder</h1><p>Hello ' +
-        escapeHtml(recipientName) +
-        ',</p><p>Please confirm that you requested this reminder:</p><div style="background:#f4f7fb;border:1px solid #dce4ef;border-radius:14px;padding:18px"><strong>' +
-        escapeHtml(reminderTitle) +
-        '</strong><br>Event: ' + escapeHtml(eventText) + '<br>Reminder: ' +
-        escapeHtml(reminderText) +
-        '<br><span style="color:#526078">' +
-        escapeHtml(reminderMessage) +
-        '</span></div><p><a href="' + verifyUrl +
-        '" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:13px 20px;border-radius:10px;font-weight:bold">Confirm reminder</a></p><p style="font-size:13px;color:#6b7280">This confirmation link expires after 48 hours. If you did not request this, you may ignore this email or <a href="' +
-        cancelUrl + '">cancel it</a>.</p><p style="font-size:14px"><a href="' + myRemindersUrl + '" style="color:#2563eb;font-weight:bold">View all of my reminders</a></p></div>'
-    }, { idempotencyKey: 'verify-reminder/' + reminderId });
-
-    if (sendError) throw sendError;
-    if (!emailData?.id) throw new Error('Resend returned no email ID.');
-
+    await sendConfirmationEmail(reminderRow, req, 0);
     return sendJson(res, 201, { ok: true, message: 'Please check your email and tap “Confirm reminder.”' });
   } catch (error) {
     console.error('create-reminder failure', {
@@ -623,11 +997,37 @@ async function createReminder(req, res) {
       details: error?.details
     });
 
-    if (reminderId && stage === 'send_confirmation_email') {
+    if (reminderId) {
+      try { await deleteAttachmentsForReminder(reminderId); } catch {}
       try { await deleteReminderById(reminderId); } catch {}
     }
 
-    return sendJson(res, 500, { error: 'We could not create the reminder. Error code: ' + publicError(stage) + '.' });
+    const validationMessage = stage === 'validate_request' && error?.message ? error.message : null;
+    return sendJson(res, validationMessage ? 400 : 500, { error: validationMessage || ('We could not create the reminder. Error code: ' + publicError(stage) + '.') });
+  }
+}
+
+async function finalizeAttachments(req, res) {
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const reminderId = readScopedToken(body.token, 'finalize-attachments');
+    if (!reminderId) return sendJson(res, 401, { error: 'The secure upload session is invalid or expired.' });
+
+    const row = await selectReminderById(reminderId);
+    if (!row) return sendJson(res, 404, { error: 'Reminder not found.' });
+    if (row.status !== 'pending_upload') return sendJson(res, 409, { error: 'This attachment upload was already finalized.' });
+
+    const attachments = await selectAttachmentsByReminder(reminderId);
+    if (!attachments.length) return sendJson(res, 400, { error: 'No encrypted attachments were found.' });
+    await verifyUploadedAttachments(reminderId, attachments);
+    await sendConfirmationEmail(row, req, attachments.length);
+    await updateReminderById(reminderId, { status: 'pending_verification' });
+
+    return sendJson(res, 200, { ok: true, message: 'Encrypted files uploaded. Please check your email and tap “Confirm reminder.”' });
+  } catch (error) {
+    console.error('finalize-attachments error', error);
+    return sendJson(res, 500, { error: 'We could not finish the encrypted attachment upload. Please try again.' });
   }
 }
 
@@ -641,17 +1041,20 @@ async function verifyReminder(req, res, url) {
     const row = await selectReminderById(id);
     if (!row) return sendHtml(res, 404, 'Reminder not found', 'This reminder no longer exists.');
     if (row.status === 'cancelled') return sendHtml(res, 200, 'Reminder cancelled', 'This reminder has already been cancelled.');
+    if (row.status === 'pending_upload') return sendHtml(res, 409, 'Upload not finished', 'The encrypted attachment upload was not completed. Please create the reminder again.');
     if (row.status === 'active') return sendHtml(res, 200, 'Already confirmed', 'Your reminder is active. No further action is needed.');
 
     const now = DateTime.utc();
     const created = DateTime.fromISO(row.created_at, { setZone: true });
     if (created.plus({ hours: 48 }) < now) {
       await updateReminderById(id, { status: 'expired' });
+      try { await deleteAttachmentsForReminder(id); } catch {}
       return sendHtml(res, 410, 'Confirmation expired', 'This confirmation link expired. Please create the reminder again.');
     }
 
     if (DateTime.fromISO(row.event_at, { setZone: true }) <= now) {
       await updateReminderById(id, { status: 'expired' });
+      try { await deleteAttachmentsForReminder(id); } catch {}
       return sendHtml(res, 410, 'Event has passed', 'The event date has already passed. Please create a new reminder.');
     }
 
@@ -695,6 +1098,7 @@ async function cancelReminder(req, res, url) {
     }
 
     await updateReminderById(id, { status: 'cancelled' });
+    try { await deleteAttachmentsForReminder(id); } catch (deleteError) { console.error('Could not delete cancelled reminder attachments', id, deleteError); }
     return sendHtml(res, 200, 'Reminder cancelled', 'You will not receive any more emails for this reminder.');
   } catch (error) {
     console.error('cancel-reminder error', error);
@@ -785,12 +1189,15 @@ async function sendReminders(req, res) {
       }
     }
 
+    const attachmentsDeleted = await cleanupExpiredAttachments(nowUtc);
+
     return sendJson(res, 200, {
       ok: true,
       checked: reminders.length,
       sent,
       customScheduled,
       completed,
+      attachmentsDeleted,
       failures
     });
   } catch (error) {
@@ -847,6 +1254,7 @@ export default async function handler(req, res) {
   }
 
   if (path === '/api/create-reminder') return createReminder(req, res);
+  if (path === '/api/finalize-attachments') return finalizeAttachments(req, res);
   if (path === '/api/verify-reminder') return verifyReminder(req, res, url);
   if (path === '/api/cancel-reminder') return cancelReminder(req, res, url);
   if (path === '/api/send-reminders') return sendReminders(req, res);
