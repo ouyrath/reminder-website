@@ -2,17 +2,49 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "builds": [
-    { "src": "server.js", "use": "@vercel/node" },
-    { "src": "test-five-min.js", "use": "@vercel/node" },
-    { "src": "my-reminders.js", "use": "@vercel/node" }
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "test-five-min.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "my-reminders.js",
+      "use": "@vercel/node"
+    }
   ],
   "routes": [
-    { "src": "/test-5-min", "dest": "/test-five-min.js" },
-    { "src": "/my-reminders", "dest": "/my-reminders.js" },
-    { "src": "/api/my-reminders/request-access", "dest": "/my-reminders.js" },
-    { "src": "/(.*)", "dest": "/server.js" }
+    {
+      "src": "/test-5-min",
+      "dest": "/test-five-min.js"
+    },
+    {
+      "src": "/my-reminders",
+      "dest": "/my-reminders.js"
+    },
+    {
+      "src": "/api/my-reminders/request-access",
+      "dest": "/my-reminders.js"
+    },
+    {
+      "src": "/api/my-reminders/attachment-url",
+      "dest": "/my-reminders.js"
+    },
+    {
+      "src": "/api/my-reminders/delete-attachment",
+      "dest": "/my-reminders.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/server.js"
+    }
   ],
   "crons": [
-    { "path": "/api/send-reminders", "schedule": "0 13 * * *" }
+    {
+      "path": "/api/send-reminders",
+      "schedule": "0 13 * * *"
+    }
   ]
 }
