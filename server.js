@@ -14,9 +14,12 @@ const HOME_HTML = `<!doctype html>
     *{box-sizing:border-box}
     body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:linear-gradient(145deg,#edf4ff 0,#f8fafc 45%,#eefbf6 100%);min-height:100vh}
     .shell{max-width:1120px;margin:auto;padding:32px 20px 56px}
-    .nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:38px}
+    .nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:38px;gap:14px}
     .brand{display:flex;align-items:center;gap:11px;font-weight:850;font-size:20px}
     .logo{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:var(--blue);color:white;box-shadow:0 10px 24px rgba(37,99,235,.24)}
+    .nav-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+    .my-link{display:inline-block;text-decoration:none;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;padding:9px 13px;border-radius:11px;font-weight:800;font-size:14px}
+    .my-link:hover{background:#dbeafe}
     .free{font-size:12px;background:#dcfce7;color:#166534;padding:6px 10px;border-radius:999px;font-weight:800}
     .layout{display:grid;grid-template-columns:.86fr 1.14fr;gap:34px;align-items:start}
     .hero{padding:28px 8px}.eyebrow{color:var(--blue);font-weight:800;font-size:14px}
@@ -48,12 +51,12 @@ const HOME_HTML = `<!doctype html>
     .privacy{font-size:12px;color:var(--muted);line-height:1.55;margin:15px 0 0;text-align:center}
     .trap{position:absolute;left:-9999px;opacity:0;height:0;overflow:hidden}.foot{text-align:center;color:var(--muted);font-size:13px;margin-top:32px}
     @media(max-width:820px){.layout{grid-template-columns:1fr}.hero{padding:8px}.hero h1{font-size:46px}.card{padding:22px}}
-    @media(max-width:560px){.shell{padding:22px 14px 40px}.nav{margin-bottom:22px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.options{grid-template-columns:1fr}.hero h1{font-size:39px}.hero p{font-size:17px}.card{border-radius:18px}}
+    @media(max-width:560px){.shell{padding:22px 14px 40px}.nav{margin-bottom:22px;align-items:flex-start}.nav-actions{gap:7px}.my-link{padding:8px 10px;font-size:13px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.options{grid-template-columns:1fr}.hero h1{font-size:39px}.hero p{font-size:17px}.card{border-radius:18px}}
   </style>
 </head>
 <body>
   <main class="shell">
-    <nav class="nav"><div class="brand"><span class="logo">✓</span> Reminder</div><span class="free">FREE TO USE</span></nav>
+    <nav class="nav"><div class="brand"><span class="logo">✓</span> Reminder</div><div class="nav-actions"><a class="my-link" href="/my-reminders">My Reminders</a><span class="free">FREE TO USE</span></div></nav>
     <section class="layout">
       <div class="hero">
         <div class="eyebrow">● ANY FUTURE DATE OR YEAR</div>
@@ -95,7 +98,7 @@ const HOME_HTML = `<!doctype html>
         </div>
       </form>
     </section>
-    <footer class="foot">Free email reminder service · Confirmation required · No password needed</footer>
+    <footer class="foot"><a href="/my-reminders" style="color:#2563eb;font-weight:800;text-decoration:none">View My Reminders</a><br><br>Free email reminder service · Confirmation required · No password needed</footer>
   </main>
 
   <script>
@@ -427,7 +430,9 @@ async function scheduleCustomReminder(row, req, nowUtc = DateTime.utc()) {
   if (customAt > nowUtc.plus({ days: 28 })) return null;
 
   const token = makeManageToken(row.id);
-  const cancelUrl = getBaseUrl(req) + '/api/cancel-reminder?token=' + encodeURIComponent(token);
+  const baseUrl = getBaseUrl(req);
+  const cancelUrl = baseUrl + '/api/cancel-reminder?token=' + encodeURIComponent(token);
+  const myRemindersUrl = baseUrl + '/my-reminders';
   const eventText = formatDateTime(row.event_at, row.timezone);
   const customText = formatDateTime(row.custom_reminder_at, row.timezone);
 
@@ -446,7 +451,7 @@ async function scheduleCustomReminder(row, req, nowUtc = DateTime.utc()) {
       '</strong><br><span style="color:#526078">' +
       escapeHtml(row.reminder_message) +
       '</span></div><p style="font-size:13px;color:#6b7280"><a href="' +
-      cancelUrl + '">Cancel future emails for this reminder</a>.</p></div>'
+      cancelUrl + '">Cancel future emails for this reminder</a>.</p><p style="font-size:14px"><a href="' + myRemindersUrl + '" style="color:#2563eb;font-weight:bold">View all of my reminders</a></p></div>'
   };
 
   if (customAt > nowUtc.plus({ seconds: 45 })) {
@@ -577,6 +582,7 @@ async function createReminder(req, res) {
     const baseUrl = getBaseUrl(req);
     const verifyUrl = baseUrl + '/api/verify-reminder?token=' + encodeURIComponent(token);
     const cancelUrl = baseUrl + '/api/cancel-reminder?token=' + encodeURIComponent(token);
+    const myRemindersUrl = baseUrl + '/my-reminders';
     const eventText = formatDateTime(eventAt, timezone);
     const reminderText = selectedReminderText({
       eventAt,
@@ -601,7 +607,7 @@ async function createReminder(req, res) {
         escapeHtml(reminderMessage) +
         '</span></div><p><a href="' + verifyUrl +
         '" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:13px 20px;border-radius:10px;font-weight:bold">Confirm reminder</a></p><p style="font-size:13px;color:#6b7280">This confirmation link expires after 48 hours. If you did not request this, you may ignore this email or <a href="' +
-        cancelUrl + '">cancel it</a>.</p></div>'
+        cancelUrl + '">cancel it</a>.</p><p style="font-size:14px"><a href="' + myRemindersUrl + '" style="color:#2563eb;font-weight:bold">View all of my reminders</a></p></div>'
     }, { idempotencyKey: 'verify-reminder/' + reminderId });
 
     if (sendError) throw sendError;
@@ -746,7 +752,9 @@ async function sendReminders(req, res) {
           if (!today.hasSame(dueDay, 'day') || createdLocal > dueDay.endOf('day')) continue;
 
           const token = makeManageToken(row.id);
-          const cancelUrl = getBaseUrl(req) + '/api/cancel-reminder?token=' + encodeURIComponent(token);
+          const baseUrl = getBaseUrl(req);
+          const cancelUrl = baseUrl + '/api/cancel-reminder?token=' + encodeURIComponent(token);
+          const myRemindersUrl = baseUrl + '/my-reminders';
           const eventText = formatDateTime(row.event_at, row.timezone);
 
           const { error: sendError } = await resend.emails.send({
@@ -764,7 +772,7 @@ async function sendReminders(req, res) {
               '</strong><br><span style="color:#526078">' +
               escapeHtml(row.reminder_message) +
               '</span></div><p style="font-size:13px;color:#6b7280"><a href="' +
-              cancelUrl + '">Cancel future emails for this reminder</a>.</p></div>'
+              cancelUrl + '">Cancel future emails for this reminder</a>.</p><p style="font-size:14px"><a href="' + myRemindersUrl + '" style="color:#2563eb;font-weight:bold">View all of my reminders</a></p></div>'
           }, { idempotencyKey: 'reminder/' + row.id + '/' + kind.sent + '/' + dueDay.toISODate() });
 
           if (sendError) throw sendError;
