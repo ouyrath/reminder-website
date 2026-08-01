@@ -7,7 +7,7 @@ const HOME_HTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Create a free email reminder for an important event.">
+  <meta name="description" content="Create a free email reminder for any future date and time.">
   <title>Free Email Reminder</title>
   <style>
     :root{--ink:#14213d;--muted:#5c6b82;--line:#dce4ef;--blue:#2563eb;--blue2:#1d4ed8;--good:#087f5b;--bad:#b42318}
@@ -19,12 +19,10 @@ const HOME_HTML = `<!doctype html>
     .logo{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:var(--blue);color:white;box-shadow:0 10px 24px rgba(37,99,235,.24)}
     .free{font-size:12px;background:#dcfce7;color:#166534;padding:6px 10px;border-radius:999px;font-weight:800}
     .layout{display:grid;grid-template-columns:.86fr 1.14fr;gap:34px;align-items:start}
-    .hero{padding:28px 8px}
-    .eyebrow{color:var(--blue);font-weight:800;font-size:14px}
+    .hero{padding:28px 8px}.eyebrow{color:var(--blue);font-weight:800;font-size:14px}
     .hero h1{font-size:clamp(42px,6vw,68px);line-height:1.02;letter-spacing:-.045em;margin:16px 0 20px}
     .hero p{font-size:19px;line-height:1.65;color:var(--muted);max-width:560px}
-    .points{display:grid;gap:15px;margin-top:30px}
-    .point{display:flex;gap:12px;align-items:flex-start}
+    .points{display:grid;gap:15px;margin-top:30px}.point{display:flex;gap:12px;align-items:flex-start}
     .check{flex:0 0 auto;width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:#dcfce7;color:#087f5b;font-weight:900}
     .point strong{display:block;margin-bottom:3px}.point span{color:var(--muted);font-size:14px;line-height:1.45}
     .card{background:rgba(255,255,255,.94);border:1px solid rgba(210,221,235,.95);border-radius:24px;padding:28px;box-shadow:0 24px 70px rgba(30,55,90,.13)}
@@ -38,6 +36,10 @@ const HOME_HTML = `<!doctype html>
     .option{position:relative}.option input{position:absolute;opacity:0;pointer-events:none}
     .option label{margin:0;padding:13px 10px;border:1px solid #cfd9e7;border-radius:12px;text-align:center;cursor:pointer;font-size:13px;background:#fff}
     .option input:checked+label{border-color:var(--blue);background:#eff6ff;color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue)}
+    .custom{border:1px solid #bfdbfe;background:#eff6ff;border-radius:15px;padding:16px}
+    .custom-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .custom-head input{width:19px;height:19px;margin:0}.custom-head label{margin:0;cursor:pointer}
+    .custom.disabled{opacity:.62}.custom.disabled input[type="datetime-local"]{background:#f3f4f6}
     button{width:100%;border:0;border-radius:13px;padding:14px 18px;background:var(--blue);color:#fff;font:inherit;font-weight:850;cursor:pointer;box-shadow:0 12px 24px rgba(37,99,235,.22)}
     button:hover{background:var(--blue2)}button:disabled{opacity:.6;cursor:not-allowed}
     .status{display:none;margin-top:15px;padding:13px 15px;border-radius:12px;font-size:14px;line-height:1.5}
@@ -54,13 +56,13 @@ const HOME_HTML = `<!doctype html>
     <nav class="nav"><div class="brand"><span class="logo">✓</span> Reminder</div><span class="free">FREE TO USE</span></nav>
     <section class="layout">
       <div class="hero">
-        <div class="eyebrow">● NEVER MISS AN IMPORTANT DATE</div>
-        <h1>Simple email reminders, right on time.</h1>
-        <p>Create one reminder and receive helpful emails one month, one week, and one day before your event.</p>
+        <div class="eyebrow">● ANY FUTURE DATE OR YEAR</div>
+        <h1>Simple email reminders, exactly when you choose.</h1>
+        <p>Choose a custom reminder date and time—even years in the future—or use the one-month, one-week, and one-day options.</p>
         <div class="points">
-          <div class="point"><span class="check">✓</span><div><strong>No account required</strong><span>Enter your event, confirm your email, and you are finished.</span></div></div>
-          <div class="point"><span class="check">✓</span><div><strong>Your time zone matters</strong><span>Event dates are interpreted in the time zone you choose.</span></div></div>
-          <div class="point"><span class="check">✓</span><div><strong>Easy cancellation</strong><span>Every reminder email includes a cancellation link.</span></div></div>
+          <div class="point"><span class="check">✓</span><div><strong>Any future year</strong><span>Your reminder stays saved until it is close enough to schedule securely.</span></div></div>
+          <div class="point"><span class="check">✓</span><div><strong>Your local time zone</strong><span>The selected date and time are converted correctly for delivery.</span></div></div>
+          <div class="point"><span class="check">✓</span><div><strong>No account required</strong><span>Confirm your email once, then the reminder becomes active.</span></div></div>
         </div>
       </div>
 
@@ -72,13 +74,22 @@ const HOME_HTML = `<!doctype html>
           <div><label for="recipient_email">Email address</label><input id="recipient_email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com"></div>
           <div class="full"><label for="reminder_title">Reminder title</label><input id="reminder_title" maxlength="120" required placeholder="Business meeting"></div>
           <div class="full"><label for="reminder_message">Reminder details</label><textarea id="reminder_message" maxlength="1500" required placeholder="Meet John to discuss the new business agreement."></textarea></div>
-          <div><label for="event_local">Event date and time</label><input id="event_local" type="datetime-local" required><span class="hint">Choose the actual event time.</span></div>
+          <div><label for="event_local">Event date and time</label><input id="event_local" type="datetime-local" required><span class="hint">The date and time of the event.</span></div>
           <div><label for="timezone">Time zone</label><select id="timezone" required></select><span class="hint">Automatically detected; change it when needed.</span></div>
-          <div class="full"><label>Send reminder emails</label><div class="options">
-            <div class="option"><input id="oneMonth" type="checkbox" checked><label for="oneMonth">One month before</label></div>
-            <div class="option"><input id="oneWeek" type="checkbox" checked><label for="oneWeek">One week before</label></div>
-            <div class="option"><input id="oneDay" type="checkbox" checked><label for="oneDay">One day before</label></div>
+
+          <div class="full custom" id="customBox">
+            <div class="custom-head"><input id="customEnabled" type="checkbox" checked><label for="customEnabled">Send at my own custom date and time</label></div>
+            <label for="custom_reminder_local">Custom reminder date and time</label>
+            <input id="custom_reminder_local" type="datetime-local" required>
+            <span class="hint">Choose any future date, time, or year. It must be no later than the event.</span>
+          </div>
+
+          <div class="full"><label>Optional additional reminder emails</label><div class="options">
+            <div class="option"><input id="oneMonth" type="checkbox"><label for="oneMonth">One month before</label></div>
+            <div class="option"><input id="oneWeek" type="checkbox"><label for="oneWeek">One week before</label></div>
+            <div class="option"><input id="oneDay" type="checkbox"><label for="oneDay">One day before</label></div>
           </div></div>
+
           <div class="trap" aria-hidden="true"><label for="website">Website</label><input id="website" tabindex="-1" autocomplete="off"></div>
           <div class="full"><button id="submitButton" type="submit">Create free reminder</button><div id="status" class="status" role="status" aria-live="polite"></div><p class="privacy">By submitting, you agree to receive the confirmation and reminder emails you selected. We use your information only to provide this reminder service.</p></div>
         </div>
@@ -93,6 +104,9 @@ const HOME_HTML = `<!doctype html>
     const button = document.getElementById('submitButton');
     const zoneSelect = document.getElementById('timezone');
     const eventInput = document.getElementById('event_local');
+    const customEnabled = document.getElementById('customEnabled');
+    const customInput = document.getElementById('custom_reminder_local');
+    const customBox = document.getElementById('customBox');
     const oneMonth = document.getElementById('oneMonth');
     const oneWeek = document.getElementById('oneWeek');
     const oneDay = document.getElementById('oneDay');
@@ -108,20 +122,42 @@ const HOME_HTML = `<!doctype html>
       zoneSelect.appendChild(option);
     });
 
-    function updateMinimumDate() {
-      const minDate = new Date(Date.now() + 30 * 60 * 1000);
-      eventInput.min = new Date(minDate.getTime() - minDate.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+    function localValue(date) {
+      return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16);
     }
-    updateMinimumDate();
+
+    function updateMinimumDates() {
+      const customMin = new Date(Date.now() + 5 * 60 * 1000);
+      const eventMin = new Date(Date.now() + 15 * 60 * 1000);
+      customInput.min = localValue(customMin);
+      eventInput.min = localValue(eventMin);
+    }
+
+    function toggleCustom() {
+      customInput.disabled = !customEnabled.checked;
+      customInput.required = customEnabled.checked;
+      customBox.classList.toggle('disabled', !customEnabled.checked);
+    }
+
+    customEnabled.addEventListener('change', toggleCustom);
+    updateMinimumDates();
+    toggleCustom();
 
     form.addEventListener('submit', async function(event) {
       event.preventDefault();
       statusBox.className = 'status';
       statusBox.textContent = '';
       if (!form.reportValidity()) return;
-      if (![oneMonth, oneWeek, oneDay].some(function(box){ return box.checked; })) {
+
+      if (![customEnabled, oneMonth, oneWeek, oneDay].some(function(box){ return box.checked; })) {
         statusBox.className = 'status bad';
         statusBox.textContent = 'Choose at least one reminder time.';
+        return;
+      }
+
+      if (customEnabled.checked && new Date(customInput.value) > new Date(eventInput.value)) {
+        statusBox.className = 'status bad';
+        statusBox.textContent = 'The custom reminder must be before or at the event time.';
         return;
       }
 
@@ -138,6 +174,8 @@ const HOME_HTML = `<!doctype html>
             reminder_message: document.getElementById('reminder_message').value,
             event_local: eventInput.value,
             timezone: zoneSelect.value,
+            remind_custom: customEnabled.checked,
+            custom_reminder_local: customEnabled.checked ? customInput.value : '',
             remind_one_month: oneMonth.checked,
             remind_one_week: oneWeek.checked,
             remind_one_day: oneDay.checked,
@@ -150,8 +188,10 @@ const HOME_HTML = `<!doctype html>
         statusBox.textContent = data.message;
         form.reset();
         zoneSelect.value = detectedZone;
-        oneMonth.checked = oneWeek.checked = oneDay.checked = true;
-        updateMinimumDate();
+        customEnabled.checked = true;
+        oneMonth.checked = oneWeek.checked = oneDay.checked = false;
+        toggleCustom();
+        updateMinimumDates();
       } catch (error) {
         statusBox.className = 'status bad';
         statusBox.textContent = error.message || 'Something went wrong. Please try again.';
@@ -208,6 +248,7 @@ async function supabaseRequest(path, options = {}) {
   const { url, key } = supabaseConfig();
   const headers = {
     apikey: key,
+    Authorization: 'Bearer ' + key,
     Accept: 'application/json',
     ...options.headers
   };
@@ -233,7 +274,7 @@ async function supabaseRequest(path, options = {}) {
   if (!response.ok) {
     const message = typeof data === 'object' && data
       ? (data.message || data.error || data.hint || JSON.stringify(data))
-      : (String(data || response.statusText));
+      : String(data || response.statusText);
     const error = new Error(message || 'Supabase request failed.');
     error.status = response.status;
     error.details = data;
@@ -271,7 +312,7 @@ async function insertReminder(row) {
 }
 
 async function selectReminderById(id) {
-  const query = queryString({ select: 'id,status,created_at,event_at', id: 'eq.' + id, limit: 1 });
+  const query = queryString({ select: '*', id: 'eq.' + id, limit: 1 });
   const { data } = await supabaseRequest('reminders?' + query);
   return Array.isArray(data) && data.length ? data[0] : null;
 }
@@ -353,8 +394,8 @@ function getBaseUrl(req) {
   return protocol + '://' + String(req.headers.host || '');
 }
 
-function formatEvent(eventAt, timezone) {
-  return DateTime.fromISO(eventAt, { setZone: true })
+function formatDateTime(value, timezone) {
+  return DateTime.fromISO(value, { setZone: true })
     .setZone(timezone)
     .toLocaleString(DateTime.DATETIME_FULL);
 }
@@ -367,6 +408,63 @@ function publicError(stage) {
     send_confirmation_email: 'EMAIL-SEND',
     initialize_services: 'CONFIG'
   })[stage] || 'SERVER';
+}
+
+function selectedReminderText({ eventAt, timezone, customAt, oneMonth, oneWeek, oneDay }) {
+  const items = [];
+  if (customAt) items.push('Custom: ' + formatDateTime(customAt, timezone));
+  if (oneMonth) items.push('One month before the event');
+  if (oneWeek) items.push('One week before the event');
+  if (oneDay) items.push('One day before the event');
+  return items.join(' · ');
+}
+
+async function scheduleCustomReminder(row, req, nowUtc = DateTime.utc()) {
+  if (!row.custom_reminder_at || row.custom_email_id || row.custom_scheduled_at) return null;
+
+  const customAt = DateTime.fromISO(row.custom_reminder_at, { setZone: true }).toUTC();
+  if (!customAt.isValid) throw new Error('Invalid custom reminder date.');
+  if (customAt > nowUtc.plus({ days: 28 })) return null;
+
+  const token = makeManageToken(row.id);
+  const cancelUrl = getBaseUrl(req) + '/api/cancel-reminder?token=' + encodeURIComponent(token);
+  const eventText = formatDateTime(row.event_at, row.timezone);
+  const customText = formatDateTime(row.custom_reminder_at, row.timezone);
+
+  const payload = {
+    from: requireEnv('EMAIL_FROM'),
+    to: [row.recipient_email],
+    subject: 'Reminder: ' + row.reminder_title,
+    html: '<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;color:#172033;line-height:1.6"><p>Hello ' +
+      escapeHtml(row.recipient_name) +
+      ',</p><h1 style="font-size:26px;margin-bottom:8px">' +
+      escapeHtml(row.reminder_title) +
+      '</h1><p style="font-weight:bold;color:#2563eb">Your custom reminder time has arrived.</p><div style="background:#f4f7fb;border:1px solid #dce4ef;border-radius:14px;padding:18px"><strong>Reminder time: ' +
+      escapeHtml(customText) +
+      '</strong><br><strong>Event: ' +
+      escapeHtml(eventText) +
+      '</strong><br><span style="color:#526078">' +
+      escapeHtml(row.reminder_message) +
+      '</span></div><p style="font-size:13px;color:#6b7280"><a href="' +
+      cancelUrl + '">Cancel future emails for this reminder</a>.</p></div>'
+  };
+
+  if (customAt > nowUtc.plus({ seconds: 45 })) {
+    payload.scheduledAt = customAt.toISO();
+  }
+
+  const { data, error } = await getResend().emails.send(
+    payload,
+    { idempotencyKey: 'custom-reminder/' + row.id }
+  );
+
+  if (error) throw error;
+  if (!data?.id) throw new Error('Resend returned no scheduled email ID.');
+
+  return {
+    custom_email_id: data.id,
+    custom_scheduled_at: nowUtc.toISO()
+  };
 }
 
 async function createReminder(req, res) {
@@ -391,6 +489,8 @@ async function createReminder(req, res) {
     const reminderMessage = String(body.reminder_message || '').trim();
     const timezone = String(body.timezone || '').trim();
     const eventLocal = String(body.event_local || '').trim();
+    const remindCustom = Boolean(body.remind_custom);
+    const customReminderLocal = String(body.custom_reminder_local || '').trim();
     const remindOneMonth = Boolean(body.remind_one_month);
     const remindOneWeek = Boolean(body.remind_one_week);
     const remindOneDay = Boolean(body.remind_one_day);
@@ -400,18 +500,43 @@ async function createReminder(req, res) {
     if (!reminderTitle || reminderTitle.length > 120) return sendJson(res, 400, { error: 'Enter a reminder title of 120 characters or fewer.' });
     if (!reminderMessage || reminderMessage.length > 1500) return sendJson(res, 400, { error: 'Enter reminder details of 1,500 characters or fewer.' });
     if (!validTimezone(timezone)) return sendJson(res, 400, { error: 'Choose a valid time zone.' });
-    if (!remindOneMonth && !remindOneWeek && !remindOneDay) return sendJson(res, 400, { error: 'Choose at least one reminder time.' });
+    if (!remindCustom && !remindOneMonth && !remindOneWeek && !remindOneDay) {
+      return sendJson(res, 400, { error: 'Choose at least one reminder time.' });
+    }
 
+    const now = DateTime.utc();
     const event = DateTime.fromISO(eventLocal, { zone: timezone });
     if (!event.isValid) return sendJson(res, 400, { error: 'Choose a valid event date and time.' });
-    if (event.toUTC() <= DateTime.utc().plus({ minutes: 15 })) {
+    if (event.toUTC() <= now.plus({ minutes: 15 })) {
       return sendJson(res, 400, { error: 'The event must be at least 15 minutes in the future.' });
+    }
+
+    let customReminder = null;
+    if (remindCustom) {
+      customReminder = DateTime.fromISO(customReminderLocal, { zone: timezone });
+      if (!customReminder.isValid) return sendJson(res, 400, { error: 'Choose a valid custom reminder date and time.' });
+      if (customReminder.toUTC() <= now.plus({ minutes: 4 })) {
+        return sendJson(res, 400, { error: 'The custom reminder must be at least 5 minutes in the future.' });
+      }
+      if (customReminder.toUTC() > event.toUTC()) {
+        return sendJson(res, 400, { error: 'The custom reminder must be before or at the event time.' });
+      }
+    }
+
+    if (remindOneMonth && event.minus({ months: 1 }).toUTC() <= now) {
+      return sendJson(res, 400, { error: 'The one-month reminder time has already passed. Uncheck it or choose a later event.' });
+    }
+    if (remindOneWeek && event.minus({ days: 7 }).toUTC() <= now) {
+      return sendJson(res, 400, { error: 'The one-week reminder time has already passed. Uncheck it or choose a later event.' });
+    }
+    if (remindOneDay && event.minus({ days: 1 }).toUTC() <= now) {
+      return sendJson(res, 400, { error: 'The one-day reminder time has already passed. Uncheck it or choose a later event.' });
     }
 
     stage = 'initialize_services';
     const ipHash = getIpHash(req);
-    const nowIso = DateTime.utc().toISO();
-    const since = DateTime.utc().minus({ hours: 24 }).toISO();
+    const nowIso = now.toISO();
+    const since = now.minus({ hours: 24 }).toISO();
 
     stage = 'rate_limit_ip';
     const ipCount = await countRecentBy('created_ip_hash', ipHash, since);
@@ -426,6 +551,7 @@ async function createReminder(req, res) {
     stage = 'insert_reminder';
     reminderId = makeNumericId();
     const eventAt = event.toUTC().toISO();
+    const customAt = customReminder ? customReminder.toUTC().toISO() : null;
 
     await insertReminder({
       id: reminderId,
@@ -439,6 +565,9 @@ async function createReminder(req, res) {
       remind_one_month: remindOneMonth,
       remind_one_week: remindOneWeek,
       remind_one_day: remindOneDay,
+      custom_reminder_at: customAt,
+      custom_scheduled_at: null,
+      custom_email_id: null,
       status: 'pending_verification',
       created_ip_hash: ipHash
     });
@@ -448,7 +577,15 @@ async function createReminder(req, res) {
     const baseUrl = getBaseUrl(req);
     const verifyUrl = baseUrl + '/api/verify-reminder?token=' + encodeURIComponent(token);
     const cancelUrl = baseUrl + '/api/cancel-reminder?token=' + encodeURIComponent(token);
-    const eventText = formatEvent(eventAt, timezone);
+    const eventText = formatDateTime(eventAt, timezone);
+    const reminderText = selectedReminderText({
+      eventAt,
+      timezone,
+      customAt,
+      oneMonth: remindOneMonth,
+      oneWeek: remindOneWeek,
+      oneDay: remindOneDay
+    });
 
     const { data: emailData, error: sendError } = await getResend().emails.send({
       from: requireEnv('EMAIL_FROM'),
@@ -458,7 +595,9 @@ async function createReminder(req, res) {
         escapeHtml(recipientName) +
         ',</p><p>Please confirm that you requested this reminder:</p><div style="background:#f4f7fb;border:1px solid #dce4ef;border-radius:14px;padding:18px"><strong>' +
         escapeHtml(reminderTitle) +
-        '</strong><br>' + escapeHtml(eventText) + '<br><span style="color:#526078">' +
+        '</strong><br>Event: ' + escapeHtml(eventText) + '<br>Reminder: ' +
+        escapeHtml(reminderText) +
+        '<br><span style="color:#526078">' +
         escapeHtml(reminderMessage) +
         '</span></div><p><a href="' + verifyUrl +
         '" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:13px 20px;border-radius:10px;font-weight:bold">Confirm reminder</a></p><p style="font-size:13px;color:#6b7280">This confirmation link expires after 48 hours. If you did not request this, you may ignore this email or <a href="' +
@@ -488,6 +627,7 @@ async function createReminder(req, res) {
 
 async function verifyReminder(req, res, url) {
   if (req.method !== 'GET') return sendHtml(res, 405, 'Not allowed', 'This link only supports a normal browser visit.');
+
   try {
     const id = readManageToken(url.searchParams.get('token'));
     if (!id) return sendHtml(res, 400, 'Invalid link', 'This confirmation link is invalid.');
@@ -497,19 +637,32 @@ async function verifyReminder(req, res, url) {
     if (row.status === 'cancelled') return sendHtml(res, 200, 'Reminder cancelled', 'This reminder has already been cancelled.');
     if (row.status === 'active') return sendHtml(res, 200, 'Already confirmed', 'Your reminder is active. No further action is needed.');
 
+    const now = DateTime.utc();
     const created = DateTime.fromISO(row.created_at, { setZone: true });
-    if (created.plus({ hours: 48 }) < DateTime.utc()) {
+    if (created.plus({ hours: 48 }) < now) {
       await updateReminderById(id, { status: 'expired' });
       return sendHtml(res, 410, 'Confirmation expired', 'This confirmation link expired. Please create the reminder again.');
     }
 
-    if (DateTime.fromISO(row.event_at, { setZone: true }) <= DateTime.utc()) {
+    if (DateTime.fromISO(row.event_at, { setZone: true }) <= now) {
       await updateReminderById(id, { status: 'expired' });
       return sendHtml(res, 410, 'Event has passed', 'The event date has already passed. Please create a new reminder.');
     }
 
-    await updateReminderById(id, { status: 'active', verified_at: new Date().toISOString() });
-    return sendHtml(res, 200, 'Reminder confirmed', 'Your reminder is active. We will email you on the reminder dates you selected.');
+    const customChanges = await scheduleCustomReminder(row, req, now);
+    await updateReminderById(id, {
+      status: 'active',
+      verified_at: now.toISO(),
+      ...(customChanges || {})
+    });
+
+    const extra = customChanges
+      ? ' Your custom email has been scheduled for the exact date and time you chose.'
+      : (row.custom_reminder_at
+          ? ' Your custom email will be scheduled automatically when it is within 28 days.'
+          : '');
+
+    return sendHtml(res, 200, 'Reminder confirmed', 'Your reminder is active.' + extra);
   } catch (error) {
     console.error('verify-reminder error', error);
     return sendHtml(res, 500, 'Something went wrong', 'We could not confirm the reminder. Please try again.');
@@ -518,9 +671,23 @@ async function verifyReminder(req, res, url) {
 
 async function cancelReminder(req, res, url) {
   if (req.method !== 'GET') return sendHtml(res, 405, 'Not allowed', 'This link only supports a normal browser visit.');
+
   try {
     const id = readManageToken(url.searchParams.get('token'));
     if (!id) return sendHtml(res, 400, 'Invalid link', 'This cancellation link is invalid.');
+
+    const row = await selectReminderById(id);
+    if (!row) return sendHtml(res, 404, 'Reminder not found', 'This reminder no longer exists.');
+
+    if (row.custom_email_id && row.custom_reminder_at &&
+        DateTime.fromISO(row.custom_reminder_at, { setZone: true }) > DateTime.utc()) {
+      try {
+        await getResend().emails.cancel(row.custom_email_id);
+      } catch (cancelError) {
+        console.warn('Could not cancel scheduled Resend email', row.custom_email_id, cancelError?.message || cancelError);
+      }
+    }
+
     await updateReminderById(id, { status: 'cancelled' });
     return sendHtml(res, 200, 'Reminder cancelled', 'You will not receive any more emails for this reminder.');
   } catch (error) {
@@ -546,12 +713,20 @@ async function sendReminders(req, res) {
     const resend = getResend();
     const nowUtc = DateTime.utc();
     let sent = 0;
+    let customScheduled = 0;
     let completed = 0;
     const failures = [];
 
     for (const row of reminders) {
       try {
         if (!validTimezone(row.timezone)) throw new Error('Invalid stored time zone.');
+
+        const customChanges = await scheduleCustomReminder(row, req, nowUtc);
+        if (customChanges) {
+          await updateReminderById(row.id, customChanges);
+          Object.assign(row, customChanges);
+          customScheduled += 1;
+        }
 
         const eventLocal = DateTime.fromISO(row.event_at, { setZone: true }).setZone(row.timezone);
         const nowLocal = nowUtc.setZone(row.timezone);
@@ -566,12 +741,13 @@ async function sendReminders(req, res) {
 
         for (const kind of reminderKinds) {
           if (!row[kind.flag] || row[kind.sent]) continue;
+
           const dueDay = eventLocal.minus(kind.subtract).startOf('day');
           if (!today.hasSame(dueDay, 'day') || createdLocal > dueDay.endOf('day')) continue;
 
           const token = makeManageToken(row.id);
           const cancelUrl = getBaseUrl(req) + '/api/cancel-reminder?token=' + encodeURIComponent(token);
-          const eventText = formatEvent(row.event_at, row.timezone);
+          const eventText = formatDateTime(row.event_at, row.timezone);
 
           const { error: sendError } = await resend.emails.send({
             from: requireEnv('EMAIL_FROM'),
@@ -601,7 +777,14 @@ async function sendReminders(req, res) {
       }
     }
 
-    return sendJson(res, 200, { ok: true, checked: reminders.length, sent, completed, failures });
+    return sendJson(res, 200, {
+      ok: true,
+      checked: reminders.length,
+      sent,
+      customScheduled,
+      completed,
+      failures
+    });
   } catch (error) {
     console.error('send-reminders error', error);
     return sendJson(res, 500, { error: 'Cron job failed.' });
