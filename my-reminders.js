@@ -70,6 +70,7 @@ async function supabaseRequest(path, options = {}) {
   const { url, key } = supabaseConfig();
   const headers = {
     apikey: key,
+    Authorization: 'Bearer ' + key,
     Accept: 'application/json',
     ...options.headers
   };
