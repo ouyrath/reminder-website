@@ -162,6 +162,14 @@ function formatDate(value, timezone) {
   }
 }
 
+function effectiveStatus(row) {
+  if (row?.status === 'active') {
+    const eventTime = new Date(row.event_at).getTime();
+    if (Number.isFinite(eventTime) && eventTime <= Date.now()) return 'completed';
+  }
+  return row?.status;
+}
+
 function statusText(status) {
   return ({
     pending_verification: 'Waiting for confirmation',
@@ -177,6 +185,28 @@ function statusClass(status) {
   if (status === 'completed') return 'completed';
   if (status === 'cancelled' || status === 'expired') return 'inactive';
   return 'pending';
+}
+
+async function updatePassedReminderStatuses(rows) {
+  const passedRows = rows.filter(function(row) {
+    return effectiveStatus(row) === 'completed' && row.status === 'active';
+  });
+
+  await Promise.all(passedRows.map(async function(row) {
+    row.status = 'completed';
+    try {
+      const search = new URLSearchParams({ id: 'eq.' + row.id });
+      await supabaseRequest('reminders?' + search.toString(), {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: { status: 'completed' }
+      });
+    } catch (error) {
+      console.error('Could not update completed reminder status', row.id, error);
+    }
+  }));
+
+  return rows;
 }
 
 function deliveryText(row) {
@@ -279,10 +309,11 @@ function loginPage(message = '') {
 function recordsPage(email, rows) {
   const records = rows.map(function(row) {
     const timezone = row.timezone || 'UTC';
+    const displayStatus = effectiveStatus(row);
     return `<article class="record">
       <div class="record-head">
         <h2>${escapeHtml(row.reminder_title || 'Untitled reminder')}</h2>
-        <span class="badge ${statusClass(row.status)}">${escapeHtml(statusText(row.status))}</span>
+        <span class="badge ${statusClass(displayStatus)}">${escapeHtml(statusText(displayStatus))}</span>
       </div>
       <div class="details">
         <div class="item"><span class="key">Event</span><span class="value">${escapeHtml(formatDate(row.event_at, timezone))}</span></div>
@@ -350,6 +381,7 @@ async function viewRecords(req, res, url) {
 
   try {
     const rows = await remindersForEmail(token.email);
+    await updatePassedReminderStatuses(rows);
     return sendHtml(res, 200, recordsPage(token.email, rows));
   } catch (error) {
     console.error('my-reminders view error', error);
