@@ -3,10 +3,13 @@
   "version": 2,
   "builds": [
     { "src": "server.js", "use": "@vercel/node" },
-    { "src": "test-five-min.js", "use": "@vercel/node" }
+    { "src": "test-five-min.js", "use": "@vercel/node" },
+    { "src": "my-reminders.js", "use": "@vercel/node" }
   ],
   "routes": [
     { "src": "/test-5-min", "dest": "/test-five-min.js" },
+    { "src": "/my-reminders", "dest": "/my-reminders.js" },
+    { "src": "/api/my-reminders/request-access", "dest": "/my-reminders.js" },
     { "src": "/(.*)", "dest": "/server.js" }
   ],
   "crons": [
