@@ -611,8 +611,8 @@ async function verifyUploadedAttachments(reminderId, rows) {
 
 async function selectCleanupReminders() {
   const query = queryString({
-    select: 'id,status,created_at,event_at',
-    status: 'in.(pending_upload,pending_verification,cancelled,expired,completed)',
+    select: 'id,status,created_at,verified_at',
+    status: 'in.(pending_upload,pending_verification,cancelled,expired)',
     limit: 1000
   });
   const { data } = await supabaseRequest('reminders?' + query);
@@ -624,13 +624,15 @@ async function cleanupExpiredAttachments(nowUtc = DateTime.utc()) {
   let deleted = 0;
   for (const row of rows) {
     const created = DateTime.fromISO(row.created_at, { setZone: true });
-    const event = DateTime.fromISO(row.event_at, { setZone: true });
+    const wasConfirmed = Boolean(row.verified_at);
+
+    // Confirmed attachments are permanent until the user deletes them.
+    // Only abandoned/unconfirmed uploads are cleaned up automatically.
     const shouldDelete =
-      row.status === 'cancelled' ||
-      row.status === 'expired' ||
       (row.status === 'pending_upload' && created.plus({ hours: 2 }) < nowUtc) ||
       (row.status === 'pending_verification' && created.plus({ hours: 48 }) < nowUtc) ||
-      (row.status === 'completed' && event.plus({ days: 30 }) < nowUtc);
+      (!wasConfirmed && (row.status === 'cancelled' || row.status === 'expired') && created.plus({ hours: 48 }) < nowUtc);
+
     if (!shouldDelete) continue;
     try {
       const attachments = await selectAttachmentsByReminder(row.id);
@@ -1098,8 +1100,17 @@ async function cancelReminder(req, res, url) {
     }
 
     await updateReminderById(id, { status: 'cancelled' });
-    try { await deleteAttachmentsForReminder(id); } catch (deleteError) { console.error('Could not delete cancelled reminder attachments', id, deleteError); }
-    return sendHtml(res, 200, 'Reminder cancelled', 'You will not receive any more emails for this reminder.');
+
+    // Keep attachments for confirmed reminders until the user deletes them in My Reminders.
+    // Unconfirmed cancelled uploads are removed because no reminder ownership was confirmed.
+    if (!row.verified_at) {
+      try { await deleteAttachmentsForReminder(id); } catch (deleteError) { console.error('Could not delete unconfirmed cancelled reminder attachments', id, deleteError); }
+    }
+
+    const attachmentMessage = row.verified_at
+      ? ' Your encrypted attachments remain in My Reminders until you delete them.'
+      : '';
+    return sendHtml(res, 200, 'Reminder cancelled', 'You will not receive any more emails for this reminder.' + attachmentMessage);
   } catch (error) {
     console.error('cancel-reminder error', error);
     return sendHtml(res, 500, 'Something went wrong', 'We could not cancel the reminder. Please try again.');
