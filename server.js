@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { createClient } from '@supabase/supabase-js';
 import { servePwaAsset } from './pwa.js';
 import { processDuePush } from './push.js';
+import { turnstileScriptTag, turnstileWidgetHtml, verifyTurnstile, allowedBrowserPost, tokenFromFormBody } from './security.js';
 
 const ATTACHMENT_BUCKET = 'reminder-encrypted-files';
 const MAX_ATTACHMENTS = 5;
@@ -20,6 +21,7 @@ const HOME_HTML = `<!doctype html>
   <link rel="apple-touch-icon" href="/icon-192.png">
   <meta name="description" content="Create a free email reminder for any future date and time.">
   <title>Free Email Reminder</title>
+  ${turnstileScriptTag()}
   <style>
     :root{--ink:#14213d;--muted:#5c6b82;--line:#dce4ef;--blue:#2563eb;--blue2:#1d4ed8;--good:#087f5b;--bad:#b42318}
     *{box-sizing:border-box}
@@ -123,6 +125,7 @@ const HOME_HTML = `<!doctype html>
           </div>
 
           <div class="trap" aria-hidden="true"><label for="website">Website</label><input id="website" tabindex="-1" autocomplete="off"></div>
+          <div class="full">${turnstileWidgetHtml("create_reminder")}</div>
           <div class="full"><button id="submitButton" type="submit">Create free reminder</button><div id="status" class="status" role="status" aria-live="polite"></div><p class="privacy">By submitting, you agree to receive the confirmation and reminder emails you selected. We use your information only to provide this reminder service.</p></div>
         </div>
       </form>
@@ -341,7 +344,8 @@ const HOME_HTML = `<!doctype html>
             remind_one_week: oneWeek.checked,
             remind_one_day: oneDay.checked,
             attachments: encryptedFiles.map(function(item){ return { slot: item.slot, encrypted_size: item.encrypted_size }; }),
-            website: document.getElementById('website').value
+            website: document.getElementById('website').value,
+            turnstile_token: document.querySelector('[name="cf-turnstile-response"]')?.value || ''
           })
         });
         const data = await response.json().catch(function(){ return {}; });
@@ -382,6 +386,7 @@ const HOME_HTML = `<!doctype html>
       } finally {
         button.disabled = false;
         button.textContent = 'Create free reminder';
+        if (window.turnstile) window.turnstile.reset();
       }
     });
   </script>
@@ -855,6 +860,7 @@ async function createReminder(req, res) {
     return sendJson(res, 405, { error: 'Method not allowed.' });
   }
 
+  if (!allowedBrowserPost(req)) return sendJson(res, 403, { error: 'Request origin not allowed.' });
   let stage = 'parse_request';
   let reminderId = null;
 
@@ -865,6 +871,7 @@ async function createReminder(req, res) {
     }
 
     stage = 'validate_request';
+    if (!(await verifyTurnstile(body.turnstile_token, req, 'create_reminder'))) return sendJson(res, 403, { error: 'Please complete human verification and try again.' });
     const recipientName = String(body.recipient_name || '').trim();
     const recipientEmail = safeEmail(body.recipient_email);
     const reminderTitle = String(body.reminder_title || '').trim();
@@ -1018,6 +1025,7 @@ async function createReminder(req, res) {
 
 async function finalizeAttachments(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+  if (!allowedBrowserPost(req)) return sendJson(res, 403, { error: 'Request origin not allowed.' });
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const reminderId = readScopedToken(body.token, 'finalize-attachments');
