@@ -60,6 +60,14 @@ export async function subscribeVerifiedEmail(email, subscription) {
   }, { onConflict: 'endpoint' });
   if (error) { console.error('Push subscription storage failed', error.code); throw new Error('Could not save this device.'); }
 }
+export async function hasSavedSubscription(email, endpoint) {
+  if (!allowedEndpoint(endpoint)) return false;
+  const { data, error } = await db().from('push_subscriptions')
+    .select('id').eq('recipient_email', email).eq('endpoint', endpoint)
+    .eq('enabled', true).maybeSingle();
+  if (error) throw new Error('Could not read device notification status.');
+  return Boolean(data);
+}
 export async function unsubscribeVerifiedEmail(email, endpoint) {
   if (!allowedEndpoint(endpoint)) throw new Error('Invalid subscription.');
   const { error } = await db().from('push_subscriptions')
