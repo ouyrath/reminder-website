@@ -37,6 +37,10 @@
       "dest": "/my-reminders.js"
     },
     {
+      "src": "/api/push/status",
+      "dest": "/my-reminders.js"
+    },
+    {
       "src": "/api/push/config",
       "dest": "/my-reminders.js"
     },
