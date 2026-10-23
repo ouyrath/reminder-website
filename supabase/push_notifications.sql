@@ -37,3 +37,7 @@ alter table public.push_deliveries enable row level security;
 revoke all on public.push_subscriptions from anon, authenticated;
 revoke all on public.push_deliveries from anon, authenticated;
 -- No public/authenticated policies. The trusted server uses a Supabase secret key.
+
+-- The server-only Supabase secret role must be granted explicit access.
+grant select, insert, update, delete on public.push_subscriptions to service_role;
+grant select, insert, update, delete on public.push_deliveries to service_role;
