@@ -20,7 +20,7 @@ intentionally unchanged by this implementation.
 
 ## Step 1: Supabase table setup
 
-In the same Supabase project whose URL appears in Vercel's `SUPABASE_URL` variable,
+Use the existing Supabase project **khmerfinds-simple** (project ref `hgbtvhjnjmptxvlaotwu`), which already holds the Reminder Website `reminders` and `reminder_attachments` tables. In that project,
 run `supabase/push_notifications.sql` using Supabase SQL Editor. Do not use a
 different Supabase project's database.
 
@@ -36,7 +36,7 @@ Add these **three** variables to Vercel's production and preview project environ
 
 - `VAPID_PUBLIC_KEY`: public base64url key
 - `VAPID_PRIVATE_KEY`: corresponding private base64url key; NEVER send to browser
-- `VAPID_SUBJECT`: `mailto:you@your-verified-domain.example`
+- `VAPID_SUBJECT`: `https://reminder-website-three.vercel.app` (already set)
 
 Do not change the existing Resend or Supabase secrets. Keep VAPID private and back it
 up in the project secrets manager. Rotating it invalidates existing browser subscriptions.
@@ -47,10 +47,10 @@ Vercel Hobby's built-in cron runs only once a day; it cannot support precise pho
 notifications. To remain on free-tier infrastructure, enable **Supabase Cron + pg_net**
 in the existing Supabase database, where supported by your current plan.
 
-Use **Supabase Vault** for the existing Vercel `CRON_SECRET`; do not put it into SQL
+Use **Supabase Vault** for the separate Vercel `PUSH_CRON_SECRET`; do not put it into SQL
 files committed to GitHub, or any browser/public endpoint.
 
-Once the secret named `reminder_push_cron_secret` exists in Vault, use a secure SQL
+The secret `reminder_push_cron_secret` was created in Vault. Use a secure SQL
 Editor session to schedule:
 
 ```sql
@@ -77,8 +77,8 @@ select cron.schedule(
 );
 ```
 
-Only do this AFTER the main branch is deployed with the new route and the
-tables exist. Check cron job runs/logs and Web Push delivery failures.
+Only do this AFTER the main branch is deployed with the new route, and confirm the Vercel alias permits authenticated Supabase Cron HTTP calls; it may be behind deployment protection.
+The new private tables were created on 2026-10-23. Check cron job runs/logs and Web Push delivery failures.
 
 **Important:** The existing Vercel daily cron handles one-month, one-week and one-day
 EMAIL reminders **once on the due calendar day**, not at the exact selected local
