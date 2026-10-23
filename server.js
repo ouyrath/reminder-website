@@ -1267,7 +1267,7 @@ export default async function handler(req, res) {
 
   if (path === '/api/send-push') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
-    if (!process.env.CRON_SECRET || req.headers.authorization !== 'Bearer ' + process.env.CRON_SECRET) return sendJson(res, 401, { error: 'Unauthorized.' });
+    if (!process.env.PUSH_CRON_SECRET || req.headers.authorization !== 'Bearer ' + process.env.PUSH_CRON_SECRET) return sendJson(res, 401, { error: 'Unauthorized.' });
     try { return sendJson(res, 200, await processDuePush()); }
     catch (error) { console.error('send-push error', error.message); return sendJson(res, 500, { error: 'Phone notification processing failed.' }); }
   }
