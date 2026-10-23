@@ -1048,11 +1048,28 @@ async function finalizeAttachments(req, res) {
   }
 }
 
+
+function sendActionConfirmation(res, action, token) {
+  const isCancel = action === 'cancel';
+  const title = isCancel ? 'Cancel this reminder?' : 'Confirm your reminder';
+  const message = isCancel
+    ? 'Future email and phone notifications for this reminder will stop only after you press the button below.'
+    : 'Your reminder will become active only after you press the confirmation button below.';
+  const button = isCancel ? 'Yes, cancel this reminder' : 'Confirm and activate reminder';
+  const destination = isCancel ? '/api/cancel-reminder' : '/api/verify-reminder';
+  res.status(200);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>' + escapeHtml(title) + '</title><style>body{margin:0;padding:22px;min-height:100vh;box-sizing:border-box;background:#f1f5f9;display:grid;place-items:center;font:16px system-ui,sans-serif;color:#172033}.card{background:white;max-width:520px;border:1px solid #dce4ef;border-radius:20px;padding:27px;box-shadow:0 18px 50px #17203315}h1{font-size:29px}p{line-height:1.6}button{width:100%;background:#2563eb;border:0;border-radius:12px;color:white;font:inherit;padding:14px;cursor:pointer}a{display:block;margin-top:20px;color:#2563eb}</style></head><body><main class="card"><h1>' + escapeHtml(title) + '</h1><p>' + escapeHtml(message) + '</p><form method="post" action="' + destination + '"><input type="hidden" name="token" value="' + escapeHtml(token) + '"><button type="submit">' + escapeHtml(button) + '</button></form><a href="/">Return to home</a></main></body></html>');
+}
+
 async function verifyReminder(req, res, url) {
-  if (req.method !== 'GET') return sendHtml(res, 405, 'Not allowed', 'This link only supports a normal browser visit.');
+  if (!['GET','POST'].includes(req.method)) return sendHtml(res, 405, 'Not allowed', 'Unsupported method.');
+  if (req.method === 'POST' && !allowedBrowserPost(req)) return sendHtml(res, 403, 'Not allowed', 'Request origin not allowed.');
 
   try {
-    const id = readManageToken(url.searchParams.get('token'));
+    const rawToken = req.method === 'POST' ? tokenFromFormBody(req) : url.searchParams.get('token');
+    const id = readManageToken(rawToken);
     if (!id) return sendHtml(res, 400, 'Invalid link', 'This confirmation link is invalid.');
 
     const row = await selectReminderById(id);
@@ -1075,6 +1092,8 @@ async function verifyReminder(req, res, url) {
       return sendHtml(res, 410, 'Event has passed', 'The event date has already passed. Please create a new reminder.');
     }
 
+    if (req.method === 'GET') return sendActionConfirmation(res, 'verify', rawToken);
+
     const customChanges = await scheduleCustomReminder(row, req, now);
     await updateReminderById(id, {
       status: 'active',
@@ -1096,14 +1115,18 @@ async function verifyReminder(req, res, url) {
 }
 
 async function cancelReminder(req, res, url) {
-  if (req.method !== 'GET') return sendHtml(res, 405, 'Not allowed', 'This link only supports a normal browser visit.');
+  if (!['GET','POST'].includes(req.method)) return sendHtml(res, 405, 'Not allowed', 'Unsupported method.');
+  if (req.method === 'POST' && !allowedBrowserPost(req)) return sendHtml(res, 403, 'Not allowed', 'Request origin not allowed.');
 
   try {
-    const id = readManageToken(url.searchParams.get('token'));
+    const rawToken = req.method === 'POST' ? tokenFromFormBody(req) : url.searchParams.get('token');
+    const id = readManageToken(rawToken);
     if (!id) return sendHtml(res, 400, 'Invalid link', 'This cancellation link is invalid.');
 
     const row = await selectReminderById(id);
     if (!row) return sendHtml(res, 404, 'Reminder not found', 'This reminder no longer exists.');
+
+    if (req.method === 'GET') return sendActionConfirmation(res, 'cancel', rawToken);
 
     if (row.custom_email_id && row.custom_reminder_at &&
         DateTime.fromISO(row.custom_reminder_at, { setZone: true }) > DateTime.utc()) {
