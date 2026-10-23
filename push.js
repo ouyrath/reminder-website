@@ -68,7 +68,7 @@ export async function unsubscribeVerifiedEmail(email, endpoint) {
 }
 function dueKinds(reminder, now) {
   const eventLocal = DateTime.fromISO(reminder.event_at, { setZone: true }).setZone(reminder.timezone || 'UTC');
-  if (!eventLocal.isValid || eventLocal.toUTC() <= now) return [];
+  if (!eventLocal.isValid || eventLocal.toUTC() < now.minus({ hours: 6 })) return [];
   const possibilities = [
     ['custom', reminder.custom_reminder_at && DateTime.fromISO(reminder.custom_reminder_at, { setZone: true })],
     ['month', reminder.remind_one_month && eventLocal.minus({ months: 1 })],
@@ -136,7 +136,7 @@ export async function processDuePush() {
   while (offset < 2000) {
     const { data: reminders, error } = await db().from('reminders')
       .select('id,recipient_email,reminder_title,event_at,timezone,custom_reminder_at,remind_one_month,remind_one_week,remind_one_day')
-      .eq('status', 'active').gt('event_at', now.toISO())
+      .eq('status', 'active').gt('event_at', now.minus({ hours: 6 }).toISO())
       .order('event_at', { ascending: true }).range(offset, offset + 199);
     if (error) throw error;
     if (!reminders?.length) break;
