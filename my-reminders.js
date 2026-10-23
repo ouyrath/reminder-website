@@ -294,7 +294,6 @@ function pageShell(title, body) {
   <link rel="apple-touch-icon" href="/icon-192.png">
   <meta name="robots" content="noindex,nofollow">
   <title>${escapeHtml(title)}</title>
-  ${turnstileScriptTag()}
   <style>
     :root{--ink:#14213d;--muted:#5c6b82;--line:#dce4ef;--blue:#2563eb;--blue2:#1d4ed8;--good:#087f5b;--warn:#92400e;--bad:#b42318}
     *{box-sizing:border-box}
@@ -352,6 +351,7 @@ function loginPage(message = '') {
         <p class="privacy">For your privacy, the access link expires after ${ACCESS_MINUTES} minutes. People cannot see reminders belonging to another email address.</p>
       </form>
     </section>
+    ${turnstileScriptTag()}
     <script>
       const form=document.getElementById('accessForm');
       const button=document.getElementById('submitButton');
