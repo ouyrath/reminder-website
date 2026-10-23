@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
+import { turnstileScriptTag, turnstileWidgetHtml, verifyTurnstile, allowedBrowserPost, rateLimitHash, clientIp } from './security.js';
 import { pushPublicConfig, subscribeVerifiedEmail, unsubscribeVerifiedEmail, hasSavedSubscription } from './push.js';
 
 const ATTACHMENT_BUCKET = 'reminder-encrypted-files';
@@ -293,6 +294,7 @@ function pageShell(title, body) {
   <link rel="apple-touch-icon" href="/icon-192.png">
   <meta name="robots" content="noindex,nofollow">
   <title>${escapeHtml(title)}</title>
+  ${turnstileScriptTag()}
   <style>
     :root{--ink:#14213d;--muted:#5c6b82;--line:#dce4ef;--blue:#2563eb;--blue2:#1d4ed8;--good:#087f5b;--warn:#92400e;--bad:#b42318}
     *{box-sizing:border-box}
@@ -343,6 +345,8 @@ function loginPage(message = '') {
       <form id="accessForm" novalidate>
         <label for="email">Email address</label>
         <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com">
+        <div style="position:absolute;left:-9999px" aria-hidden="true"><label for="website">Website</label><input id="website" autocomplete="off" tabindex="-1"></div>
+        ${turnstileWidgetHtml("request_access")}
         <button id="submitButton" type="submit">Email my private access link</button>
         <div id="status" class="status${message ? ' good' : ''}">${escapeHtml(message)}</div>
         <p class="privacy">For your privacy, the access link expires after ${ACCESS_MINUTES} minutes. People cannot see reminders belonging to another email address.</p>
@@ -358,7 +362,7 @@ function loginPage(message = '') {
         if(!form.reportValidity())return;
         button.disabled=true;button.textContent='Sending…';
         try{
-          const response=await fetch('/api/my-reminders/request-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value})});
+          const response=await fetch('/api/my-reminders/request-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value, website:document.getElementById('website').value, turnstile_token:document.querySelector('[name="cf-turnstile-response"]')?.value||''})});
           const data=await response.json().catch(function(){return{}});
           if(!response.ok)throw new Error(data.error||'Unable to send the access link.');
           statusBox.className='status good';statusBox.textContent=data.message;
@@ -366,6 +370,7 @@ function loginPage(message = '') {
           statusBox.className='status bad';statusBox.textContent=error.message||'Something went wrong.';
         }finally{
           button.disabled=false;button.textContent='Email my private access link';
+          if(window.turnstile)window.turnstile.reset();
         }
       });
     </script>`);
@@ -597,11 +602,18 @@ function recordsPage(email, rows) {
 
 async function requestAccess(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+  if (!allowedBrowserPost(req)) return sendJson(res, 403, { error: 'Request origin not allowed.' });
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const email = safeEmail(body.email);
     if (!email) return sendJson(res, 400, { error: 'Enter a valid email address.' });
+    if (String(body.website || '').trim()) return sendJson(res, 200, { ok: true, message: 'Check your email for a private access link.' });
+    if (!(await verifyTurnstile(body.turnstile_token, req, 'request_access'))) return sendJson(res, 403, { error: 'Please complete human verification and try again.' });
+    const ipHash = rateLimitHash(clientIp(req), 'access-ip');
+    const emailHash = rateLimitHash(email, 'access-email');
+    const allowed = await supabaseRequest('rpc/record_reminder_access_attempt', { method: 'POST', body: { p_ip_hash: ipHash, p_email_hash: emailHash } });
+    if (allowed !== true) return sendJson(res, 429, { error: 'Too many requests. Please try again in about 15 minutes.' });
 
     const rows = await remindersForEmail(email);
     if (rows.length) {
