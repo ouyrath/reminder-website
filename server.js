@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { createClient } from '@supabase/supabase-js';
 import { servePwaAsset } from './pwa.js';
 import { processDuePush } from './push.js';
+import { turnstileScriptTag, turnstileWidgetHtml, verifyTurnstile, allowedBrowserPost, tokenFromFormBody } from './security.js';
 
 const ATTACHMENT_BUCKET = 'reminder-encrypted-files';
 const MAX_ATTACHMENTS = 5;
@@ -20,6 +21,7 @@ const HOME_HTML = `<!doctype html>
   <link rel="apple-touch-icon" href="/icon-192.png">
   <meta name="description" content="Create a free email reminder for any future date and time.">
   <title>Free Email Reminder</title>
+  ${turnstileScriptTag()}
   <style>
     :root{--ink:#14213d;--muted:#5c6b82;--line:#dce4ef;--blue:#2563eb;--blue2:#1d4ed8;--good:#087f5b;--bad:#b42318}
     *{box-sizing:border-box}
@@ -123,6 +125,7 @@ const HOME_HTML = `<!doctype html>
           </div>
 
           <div class="trap" aria-hidden="true"><label for="website">Website</label><input id="website" tabindex="-1" autocomplete="off"></div>
+          <div class="full">${turnstileWidgetHtml("create_reminder")}</div>
           <div class="full"><button id="submitButton" type="submit">Create free reminder</button><div id="status" class="status" role="status" aria-live="polite"></div><p class="privacy">By submitting, you agree to receive the confirmation and reminder emails you selected. We use your information only to provide this reminder service.</p></div>
         </div>
       </form>
@@ -341,7 +344,8 @@ const HOME_HTML = `<!doctype html>
             remind_one_week: oneWeek.checked,
             remind_one_day: oneDay.checked,
             attachments: encryptedFiles.map(function(item){ return { slot: item.slot, encrypted_size: item.encrypted_size }; }),
-            website: document.getElementById('website').value
+            website: document.getElementById('website').value,
+            turnstile_token: document.querySelector('[name="cf-turnstile-response"]')?.value || ''
           })
         });
         const data = await response.json().catch(function(){ return {}; });
@@ -382,6 +386,7 @@ const HOME_HTML = `<!doctype html>
       } finally {
         button.disabled = false;
         button.textContent = 'Create free reminder';
+        if (window.turnstile) window.turnstile.reset();
       }
     });
   </script>
@@ -855,6 +860,7 @@ async function createReminder(req, res) {
     return sendJson(res, 405, { error: 'Method not allowed.' });
   }
 
+  if (!allowedBrowserPost(req)) return sendJson(res, 403, { error: 'Request origin not allowed.' });
   let stage = 'parse_request';
   let reminderId = null;
 
@@ -865,6 +871,7 @@ async function createReminder(req, res) {
     }
 
     stage = 'validate_request';
+    if (!(await verifyTurnstile(body.turnstile_token, req, 'create_reminder'))) return sendJson(res, 403, { error: 'Please complete human verification and try again.' });
     const recipientName = String(body.recipient_name || '').trim();
     const recipientEmail = safeEmail(body.recipient_email);
     const reminderTitle = String(body.reminder_title || '').trim();
@@ -1018,6 +1025,7 @@ async function createReminder(req, res) {
 
 async function finalizeAttachments(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+  if (!allowedBrowserPost(req)) return sendJson(res, 403, { error: 'Request origin not allowed.' });
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const reminderId = readScopedToken(body.token, 'finalize-attachments');
@@ -1040,11 +1048,28 @@ async function finalizeAttachments(req, res) {
   }
 }
 
+
+function sendActionConfirmation(res, action, token) {
+  const isCancel = action === 'cancel';
+  const title = isCancel ? 'Cancel this reminder?' : 'Confirm your reminder';
+  const message = isCancel
+    ? 'Future email and phone notifications for this reminder will stop only after you press the button below.'
+    : 'Your reminder will become active only after you press the confirmation button below.';
+  const button = isCancel ? 'Yes, cancel this reminder' : 'Confirm and activate reminder';
+  const destination = isCancel ? '/api/cancel-reminder' : '/api/verify-reminder';
+  res.status(200);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>' + escapeHtml(title) + '</title><style>body{margin:0;padding:22px;min-height:100vh;box-sizing:border-box;background:#f1f5f9;display:grid;place-items:center;font:16px system-ui,sans-serif;color:#172033}.card{background:white;max-width:520px;border:1px solid #dce4ef;border-radius:20px;padding:27px;box-shadow:0 18px 50px #17203315}h1{font-size:29px}p{line-height:1.6}button{width:100%;background:#2563eb;border:0;border-radius:12px;color:white;font:inherit;padding:14px;cursor:pointer}a{display:block;margin-top:20px;color:#2563eb}</style></head><body><main class="card"><h1>' + escapeHtml(title) + '</h1><p>' + escapeHtml(message) + '</p><form method="post" action="' + destination + '"><input type="hidden" name="token" value="' + escapeHtml(token) + '"><button type="submit">' + escapeHtml(button) + '</button></form><a href="/">Return to home</a></main></body></html>');
+}
+
 async function verifyReminder(req, res, url) {
-  if (req.method !== 'GET') return sendHtml(res, 405, 'Not allowed', 'This link only supports a normal browser visit.');
+  if (!['GET','POST'].includes(req.method)) return sendHtml(res, 405, 'Not allowed', 'Unsupported method.');
+  if (req.method === 'POST' && !allowedBrowserPost(req)) return sendHtml(res, 403, 'Not allowed', 'Request origin not allowed.');
 
   try {
-    const id = readManageToken(url.searchParams.get('token'));
+    const rawToken = req.method === 'POST' ? tokenFromFormBody(req) : url.searchParams.get('token');
+    const id = readManageToken(rawToken);
     if (!id) return sendHtml(res, 400, 'Invalid link', 'This confirmation link is invalid.');
 
     const row = await selectReminderById(id);
@@ -1056,16 +1081,22 @@ async function verifyReminder(req, res, url) {
     const now = DateTime.utc();
     const created = DateTime.fromISO(row.created_at, { setZone: true });
     if (created.plus({ hours: 48 }) < now) {
-      await updateReminderById(id, { status: 'expired' });
-      try { await deleteAttachmentsForReminder(id); } catch {}
+      if (req.method === 'POST') {
+        await updateReminderById(id, { status: 'expired' });
+        try { await deleteAttachmentsForReminder(id); } catch {}
+      }
       return sendHtml(res, 410, 'Confirmation expired', 'This confirmation link expired. Please create the reminder again.');
     }
 
     if (DateTime.fromISO(row.event_at, { setZone: true }) <= now) {
-      await updateReminderById(id, { status: 'expired' });
-      try { await deleteAttachmentsForReminder(id); } catch {}
+      if (req.method === 'POST') {
+        await updateReminderById(id, { status: 'expired' });
+        try { await deleteAttachmentsForReminder(id); } catch {}
+      }
       return sendHtml(res, 410, 'Event has passed', 'The event date has already passed. Please create a new reminder.');
     }
+
+    if (req.method === 'GET') return sendActionConfirmation(res, 'verify', rawToken);
 
     const customChanges = await scheduleCustomReminder(row, req, now);
     await updateReminderById(id, {
@@ -1088,14 +1119,18 @@ async function verifyReminder(req, res, url) {
 }
 
 async function cancelReminder(req, res, url) {
-  if (req.method !== 'GET') return sendHtml(res, 405, 'Not allowed', 'This link only supports a normal browser visit.');
+  if (!['GET','POST'].includes(req.method)) return sendHtml(res, 405, 'Not allowed', 'Unsupported method.');
+  if (req.method === 'POST' && !allowedBrowserPost(req)) return sendHtml(res, 403, 'Not allowed', 'Request origin not allowed.');
 
   try {
-    const id = readManageToken(url.searchParams.get('token'));
+    const rawToken = req.method === 'POST' ? tokenFromFormBody(req) : url.searchParams.get('token');
+    const id = readManageToken(rawToken);
     if (!id) return sendHtml(res, 400, 'Invalid link', 'This cancellation link is invalid.');
 
     const row = await selectReminderById(id);
     if (!row) return sendHtml(res, 404, 'Reminder not found', 'This reminder no longer exists.');
+
+    if (req.method === 'GET') return sendActionConfirmation(res, 'cancel', rawToken);
 
     if (row.custom_email_id && row.custom_reminder_at &&
         DateTime.fromISO(row.custom_reminder_at, { setZone: true }) > DateTime.utc()) {
