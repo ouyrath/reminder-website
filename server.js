@@ -1081,14 +1081,18 @@ async function verifyReminder(req, res, url) {
     const now = DateTime.utc();
     const created = DateTime.fromISO(row.created_at, { setZone: true });
     if (created.plus({ hours: 48 }) < now) {
-      await updateReminderById(id, { status: 'expired' });
-      try { await deleteAttachmentsForReminder(id); } catch {}
+      if (req.method === 'POST') {
+        await updateReminderById(id, { status: 'expired' });
+        try { await deleteAttachmentsForReminder(id); } catch {}
+      }
       return sendHtml(res, 410, 'Confirmation expired', 'This confirmation link expired. Please create the reminder again.');
     }
 
     if (DateTime.fromISO(row.event_at, { setZone: true }) <= now) {
-      await updateReminderById(id, { status: 'expired' });
-      try { await deleteAttachmentsForReminder(id); } catch {}
+      if (req.method === 'POST') {
+        await updateReminderById(id, { status: 'expired' });
+        try { await deleteAttachmentsForReminder(id); } catch {}
+      }
       return sendHtml(res, 410, 'Event has passed', 'The event date has already passed. Please create a new reminder.');
     }
 
