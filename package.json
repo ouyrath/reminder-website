@@ -9,6 +9,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
     "luxon": "^3.7.2",
-    "resend": "^6.1.2"
+    "resend": "^6.1.2",
+    "web-push": "3.6.7"
   }
 }
