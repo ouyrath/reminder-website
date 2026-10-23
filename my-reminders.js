@@ -646,6 +646,7 @@ async function requestAccess(req, res) {
 
 async function attachmentUrl(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+  if (!allowedBrowserPost(req)) return sendJson(res, 403, { error: 'Request origin not allowed.' });
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const token = readAccessToken(body.token);
@@ -666,6 +667,7 @@ async function attachmentUrl(req, res) {
 
 async function deleteAttachment(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+  if (!allowedBrowserPost(req)) return sendJson(res, 403, { error: 'Request origin not allowed.' });
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const token = readAccessToken(body.token);
@@ -712,6 +714,7 @@ async function pushApi(req, res, path) {
     return sendJson(res, 404, { error: 'Not found.' });
   }
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+  if (!allowedBrowserPost(req)) return sendJson(res, 403, { error: 'Request origin not allowed.' });
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const access = readAccessToken(body.token);
