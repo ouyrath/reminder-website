@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
+import { pushPublicConfig, subscribeVerifiedEmail, unsubscribeVerifiedEmail, hasSavedSubscription } from './push.js';
 
 const ATTACHMENT_BUCKET = 'reminder-encrypted-files';
 
@@ -286,6 +287,10 @@ function pageShell(title, body) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="referrer" content="no-referrer">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <meta name="robots" content="noindex,nofollow">
   <title>${escapeHtml(title)}</title>
   <style>
@@ -316,6 +321,7 @@ function pageShell(title, body) {
     .attachment-row{display:flex;gap:8px;align-items:center;justify-content:space-between;background:#eff6ff;border:1px solid #bfdbfe;border-radius:11px;padding:9px 10px}.attachment-name{font-size:13px;font-weight:750}.attachment-actions{display:flex;gap:7px;flex-wrap:wrap}
     .attachment-button{width:auto;margin:0;padding:8px 10px;border-radius:9px;font-size:12px;box-shadow:none}.delete-button{background:#fff;color:var(--bad);border:1px solid #fecaca}.delete-button:hover{background:#fef2f2}.decrypt-note{font-size:12px;color:var(--muted);line-height:1.45;margin-top:8px}
     .empty{text-align:center;padding:40px 15px;color:var(--muted)}
+    .phone-card{margin-bottom:20px}.phone-buttons{display:flex;gap:10px;flex-wrap:wrap}.phone-buttons button{width:auto}.phone-buttons button[hidden]{display:none}
     @media(max-width:620px){.nav{align-items:flex-start}.details{grid-template-columns:1fr}.item.full{grid-column:auto}.record-head{display:block}.badge{display:inline-block;margin-top:9px}.card{padding:21px}}
   </style>
 </head>
@@ -324,6 +330,7 @@ function pageShell(title, body) {
     <nav class="nav"><a class="brand" href="/"><span class="logo">✓</span> Reminder</a><a class="back" href="/">Create reminder</a></nav>
     ${body}
   </main>
+  <script defer src="/pwa-client.js"></script>
 </body>
 </html>`;
 }
@@ -402,9 +409,133 @@ function recordsPage(email, rows) {
       <div><h1>My Reminders</h1><p>Private records for ${escapeHtml(email)}</p></div>
       <strong>${rows.length} record${rows.length === 1 ? '' : 's'}</strong>
     </section>
+    <section class="card phone-card">
+      <h2>📱 Phone notifications</h2>
+      <p class="sub">Get optional phone alerts even when the app is closed. Your email reminders stay active.</p>
+      <div class="phone-buttons">
+        <button type="button" id="enablePushButton">Enable phone notifications</button>
+        <button type="button" id="disablePushButton" hidden>Disable on this device</button>
+      </div>
+      <p class="privacy" id="pushStatus" role="status" aria-live="polite">Checking device support…</p>
+    </section>
     <section class="records">${records || '<div class="card empty">No reminder records were found for this email address.</div>'}</section>
     <script>
       const accessToken = new URLSearchParams(location.search).get('token') || '';
+
+      const pushStatus = document.getElementById('pushStatus');
+      const enablePushButton = document.getElementById('enablePushButton');
+      const disablePushButton = document.getElementById('disablePushButton');
+      const deviceSupportsPush = window.isSecureContext && ('serviceWorker' in navigator) &&
+        ('PushManager' in window) && ('Notification' in window);
+      const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+      function pushMessage(value) { pushStatus.textContent = value; }
+      function keyBytes(value) {
+        const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+        const bytes = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='));
+        return Uint8Array.from(bytes, function(c) { return c.charCodeAt(0); });
+      }
+      async function pushRegistration() {
+        return await navigator.serviceWorker.register('/sw.js');
+      }
+      async function refreshPushStatus() {
+        if (!deviceSupportsPush) {
+          enablePushButton.hidden = true;
+          disablePushButton.hidden = true;
+          pushMessage('Phone notifications are not supported in this browser. Email reminders still work.');
+          return;
+        }
+        if (isiOS && !installed) {
+          enablePushButton.hidden = true;
+          disablePushButton.hidden = true;
+          pushMessage('iPhone: open this website in Safari, tap Share > Add to Home Screen, then open the installed app to enable alerts.');
+          return;
+        }
+        if (Notification.permission === 'denied') {
+          enablePushButton.hidden = true;
+          disablePushButton.hidden = true;
+          pushMessage('Notifications are blocked in your phone settings. Enable permission for this website to continue.');
+          return;
+        }
+        try {
+          const configResponse = await fetch('/api/push/config', { cache: 'no-store' });
+          const config = await configResponse.json();
+          if (!configResponse.ok || !config.available) {
+            enablePushButton.hidden = true;
+            disablePushButton.hidden = true;
+            pushMessage('Phone notifications are being prepared. Your existing email reminders still work.');
+            return;
+          }
+          const registration = await pushRegistration();
+          const subscription = await registration.pushManager.getSubscription();
+          let active = false;
+          if (subscription) {
+            const statusResponse = await fetch('/api/push/status', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: accessToken, endpoint: subscription.endpoint })
+            });
+            const statusData = await statusResponse.json();
+            if (!statusResponse.ok) throw Error('Could not verify this device.');
+            active = Boolean(statusData.active);
+          }
+          enablePushButton.hidden = active;
+          disablePushButton.hidden = !active;
+          pushMessage(active ? 'Phone alerts are enabled on this device.' : 'Enable notifications to receive alerts even when this app is closed.');
+        } catch {
+          pushMessage('Could not check device notifications. Please try again.');
+        }
+      }
+      enablePushButton.addEventListener('click', async function () {
+        enablePushButton.disabled = true;
+        try {
+          // The permission request must be initiated by a user gesture, especially on iOS.
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') {
+            pushMessage('Notification permission was not granted. Your email reminders will continue.');
+            return;
+          }
+          const registration = await pushRegistration();
+          const configResponse = await fetch('/api/push/config', { cache: 'no-store' });
+          const config = await configResponse.json();
+          if (!configResponse.ok || !config.available || !config.publicKey) throw Error('Phone notifications are not configured yet.');
+          let subscription = await registration.pushManager.getSubscription();
+          if (!subscription) subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true, applicationServerKey: keyBytes(config.publicKey)
+          });
+          const response = await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: accessToken, subscription: subscription.toJSON() })
+          });
+          const data = await response.json();
+          if (!response.ok) throw Error(data.error || 'Could not save the device.');
+          pushMessage('Success! Phone alerts and email reminders are enabled.');
+          enablePushButton.hidden = true;
+          disablePushButton.hidden = false;
+        } catch (error) { pushMessage(error.message || 'Could not enable notifications.'); }
+        finally { enablePushButton.disabled = false; }
+      });
+      disablePushButton.addEventListener('click', async function () {
+        disablePushButton.disabled = true;
+        try {
+          const registration = await pushRegistration();
+          const subscription = await registration.pushManager.getSubscription();
+          if (subscription) {
+            const response = await fetch('/api/push/unsubscribe', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: accessToken, endpoint: subscription.endpoint })
+            });
+            if (!response.ok) throw Error('Could not remove this device from notifications.');
+            await subscription.unsubscribe();
+          }
+          enablePushButton.hidden = false;
+          disablePushButton.hidden = true;
+          pushMessage('Phone notifications disabled on this device. Email reminders remain active.');
+        } catch (error) { pushMessage(error.message || 'Could not disable notifications.'); }
+        finally { disablePushButton.disabled = false; }
+      });
+      refreshPushStatus();
+
       function concatBytes(parts){
         const length=parts.reduce(function(total,part){return total+part.byteLength},0);
         const output=new Uint8Array(length);let offset=0;
@@ -559,10 +690,40 @@ async function viewRecords(req, res, url) {
   }
 }
 
+
+async function pushApi(req, res, path) {
+  if (path === '/api/push/config') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
+    return sendJson(res, 200, pushPublicConfig());
+  }
+  if (!['/api/push/subscribe', '/api/push/unsubscribe', '/api/push/status'].includes(path)) {
+    return sendJson(res, 404, { error: 'Not found.' });
+  }
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const access = readAccessToken(body.token);
+    if (!access) return sendJson(res, 401, { error: 'Your private access link expired. Please request a new one.' });
+    if (path === '/api/push/status') {
+      return sendJson(res, 200, { ok: true, active: await hasSavedSubscription(access.email, body.endpoint) });
+    }
+    if (path === '/api/push/subscribe') {
+      await subscribeVerifiedEmail(access.email, body.subscription);
+    } else {
+      await unsubscribeVerifiedEmail(access.email, body.endpoint);
+    }
+    return sendJson(res, 200, { ok: true });
+  } catch (error) {
+    console.error('push subscription update failed', error.message);
+    return sendJson(res, 400, { error: 'Could not update phone notifications. Check your access link and try again.' });
+  }
+}
+
 export default async function handler(req, res) {
   const url = new URL(req.url || '/my-reminders', 'https://' + (req.headers.host || 'localhost'));
   const path = url.pathname.replace(/\/+$/, '') || '/';
 
+  if (path.startsWith('/api/push/')) return pushApi(req, res, path);
   if (path === '/api/my-reminders/request-access') return requestAccess(req, res);
   if (path === '/api/my-reminders/attachment-url') return attachmentUrl(req, res);
   if (path === '/api/my-reminders/delete-attachment') return deleteAttachment(req, res);

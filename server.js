@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import { Resend } from 'resend';
 import { DateTime } from 'luxon';
 import { createClient } from '@supabase/supabase-js';
+import { servePwaAsset } from './pwa.js';
+import { processDuePush } from './push.js';
 
 const ATTACHMENT_BUCKET = 'reminder-encrypted-files';
 const MAX_ATTACHMENTS = 5;
@@ -13,6 +15,9 @@ const HOME_HTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <meta name="description" content="Create a free email reminder for any future date and time.">
   <title>Free Email Reminder</title>
   <style>
@@ -26,6 +31,7 @@ const HOME_HTML = `<!doctype html>
     .nav-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
     .my-link{display:inline-block;text-decoration:none;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;padding:9px 13px;border-radius:11px;font-weight:800;font-size:14px}
     .my-link:hover{background:#dbeafe}
+    .install-link{width:auto;padding:9px 13px;background:#2563eb;color:white;border-radius:11px;font-size:14px;box-shadow:none}.install-link[hidden]{display:none}
     .free{font-size:12px;background:#dcfce7;color:#166534;padding:6px 10px;border-radius:999px;font-weight:800}
     .layout{display:grid;grid-template-columns:.86fr 1.14fr;gap:34px;align-items:start}
     .hero{padding:28px 8px}.eyebrow{color:var(--blue);font-weight:800;font-size:14px}
@@ -66,7 +72,7 @@ const HOME_HTML = `<!doctype html>
 </head>
 <body>
   <main class="shell">
-    <nav class="nav"><div class="brand"><span class="logo">✓</span> Reminder</div><div class="nav-actions"><a class="my-link" href="/my-reminders">My Reminders</a><span class="free">FREE TO USE</span></div></nav>
+    <nav class="nav"><div class="brand"><span class="logo">✓</span> Reminder</div><div class="nav-actions"><a class="my-link" href="/my-reminders">My Reminders</a><button class="install-link" id="installAppBtn" type="button" hidden>Install app</button><span class="free">FREE TO USE</span></div></nav>
     <section class="layout">
       <div class="hero">
         <div class="eyebrow">● ANY FUTURE DATE OR YEAR</div>
@@ -379,6 +385,7 @@ const HOME_HTML = `<!doctype html>
       }
     });
   </script>
+  <script defer src="/pwa-client.js"></script>
 </body>
 </html>`;
 
@@ -1255,6 +1262,15 @@ async function health(req, res) {
 export default async function handler(req, res) {
   const url = new URL(req.url || '/', 'https://' + (req.headers.host || 'localhost'));
   const path = url.pathname.replace(/\/+$/, '') || '/';
+
+  if (servePwaAsset(res, path)) return;
+
+  if (path === '/api/send-push') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
+    if (!process.env.PUSH_CRON_SECRET || req.headers.authorization !== 'Bearer ' + process.env.PUSH_CRON_SECRET) return sendJson(res, 401, { error: 'Unauthorized.' });
+    try { return sendJson(res, 200, await processDuePush()); }
+    catch (error) { console.error('send-push error', error.message); return sendJson(res, 500, { error: 'Phone notification processing failed.' }); }
+  }
 
   if (path === '/') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
