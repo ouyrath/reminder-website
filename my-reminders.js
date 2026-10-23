@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
-import { pushPublicConfig, subscribeVerifiedEmail, unsubscribeVerifiedEmail } from './push.js';
+import { pushPublicConfig, subscribeVerifiedEmail, unsubscribeVerifiedEmail, hasSavedSubscription } from './push.js';
 
 const ATTACHMENT_BUCKET = 'reminder-encrypted-files';
 
@@ -468,9 +468,19 @@ function recordsPage(email, rows) {
           }
           const registration = await pushRegistration();
           const subscription = await registration.pushManager.getSubscription();
-          enablePushButton.hidden = Boolean(subscription);
-          disablePushButton.hidden = !subscription;
-          pushMessage(subscription ? 'Phone alerts are enabled on this device.' : 'Enable notifications to receive alerts even when this app is closed.');
+          let active = false;
+          if (subscription) {
+            const statusResponse = await fetch('/api/push/status', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: accessToken, endpoint: subscription.endpoint })
+            });
+            const statusData = await statusResponse.json();
+            if (!statusResponse.ok) throw Error('Could not verify this device.');
+            active = Boolean(statusData.active);
+          }
+          enablePushButton.hidden = active;
+          disablePushButton.hidden = !active;
+          pushMessage(active ? 'Phone alerts are enabled on this device.' : 'Enable notifications to receive alerts even when this app is closed.');
         } catch {
           pushMessage('Could not check device notifications. Please try again.');
         }
@@ -686,7 +696,7 @@ async function pushApi(req, res, path) {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
     return sendJson(res, 200, pushPublicConfig());
   }
-  if (!['/api/push/subscribe', '/api/push/unsubscribe'].includes(path)) {
+  if (!['/api/push/subscribe', '/api/push/unsubscribe', '/api/push/status'].includes(path)) {
     return sendJson(res, 404, { error: 'Not found.' });
   }
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
@@ -694,6 +704,9 @@ async function pushApi(req, res, path) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const access = readAccessToken(body.token);
     if (!access) return sendJson(res, 401, { error: 'Your private access link expired. Please request a new one.' });
+    if (path === '/api/push/status') {
+      return sendJson(res, 200, { ok: true, active: await hasSavedSubscription(access.email, body.endpoint) });
+    }
     if (path === '/api/push/subscribe') {
       await subscribeVerifiedEmail(access.email, body.subscription);
     } else {
