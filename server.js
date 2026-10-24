@@ -33,6 +33,7 @@ const HOME_HTML = `<!doctype html>
     .nav-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
     .my-link{display:inline-block;text-decoration:none;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;padding:9px 13px;border-radius:11px;font-weight:800;font-size:14px}
     .my-link:hover{background:#dbeafe}
+    .share-link{width:auto;padding:9px 13px;border:1px solid #bfdbfe;background:#fff;color:#1d4ed8;box-shadow:none;font-size:14px;border-radius:11px;font-weight:800;white-space:nowrap}.share-link:hover{background:#eff6ff}.share-link:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
     .install-link{width:auto;padding:9px 13px;background:#2563eb;color:white;border-radius:11px;font-size:14px;box-shadow:none}.install-link[hidden]{display:none}
     .free{font-size:12px;background:#dcfce7;color:#166534;padding:6px 10px;border-radius:999px;font-weight:800}
     .layout{display:grid;grid-template-columns:.86fr 1.14fr;gap:34px;align-items:start}
@@ -69,12 +70,12 @@ const HOME_HTML = `<!doctype html>
     .privacy{font-size:12px;color:var(--muted);line-height:1.55;margin:15px 0 0;text-align:center}
     .trap{position:absolute;left:-9999px;opacity:0;height:0;overflow:hidden}.foot{text-align:center;color:var(--muted);font-size:13px;margin-top:32px}
     @media(max-width:820px){.layout{grid-template-columns:1fr}.hero{padding:8px}.hero h1{font-size:46px}.card{padding:22px}}
-    @media(max-width:560px){.shell{padding:22px 14px 40px}.nav{margin-bottom:22px;align-items:flex-start}.nav-actions{gap:7px}.my-link{padding:8px 10px;font-size:13px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.options{grid-template-columns:1fr}.password-grid{grid-template-columns:1fr}.hero h1{font-size:39px}.hero p{font-size:17px}.card{border-radius:18px}}
+    @media(max-width:560px){.shell{padding:22px 14px 40px}.nav{margin-bottom:22px;align-items:flex-start}.nav-actions{gap:7px}.my-link{padding:8px 10px;font-size:13px}.share-link{padding:8px 10px;font-size:13px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.options{grid-template-columns:1fr}.password-grid{grid-template-columns:1fr}.hero h1{font-size:39px}.hero p{font-size:17px}.card{border-radius:18px}}
   </style>
 </head>
 <body>
   <main class="shell">
-    <nav class="nav"><div class="brand"><span class="logo">✓</span> Reminder</div><div class="nav-actions"><a class="my-link" href="/my-reminders">My Reminders</a><button class="install-link" id="installAppBtn" type="button" hidden>Install app</button><span class="free">FREE TO USE</span></div></nav>
+    <nav class="nav"><div class="brand"><span class="logo">✓</span> Reminder</div><div class="nav-actions"><a class="my-link" href="/my-reminders">My Reminders</a><button id="shareWebsiteBtn" class="share-link" type="button" aria-label="Share Reminder Website">↗ Share</button><button class="install-link" id="installAppBtn" type="button" hidden>Install app</button><span class="free">FREE TO USE</span></div></nav>
     <section class="layout">
       <div class="hero">
         <div class="eyebrow">● ANY FUTURE DATE OR YEAR</div>
@@ -405,7 +406,7 @@ const HOME_HTML = `<!doctype html>
       }
     });
   </script>
-  <script defer src="/pwa-client.js"></script>
+  <script defer src="/pwa-client.js?v=share1"></script>
 </body>
 </html>`;
 
