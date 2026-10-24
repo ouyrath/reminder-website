@@ -80,13 +80,49 @@ export function allowedBrowserPost(req) {
   const fetchSite = String(req.headers['sec-fetch-site'] || '');
   return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none';
 }
-export function tokenFromFormBody(req) {
-  if (typeof req.body === 'string') {
-    if (!/^application\/x-www-form-urlencoded(?:;|$)/i.test(String(req.headers['content-type'] || ''))) return null;
-    return new URLSearchParams(req.body).get('token');
+export function formField(req, name) {
+  if (!['token', 'form_expires', 'form_proof'].includes(name)) return null;
+  const mediaType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if (mediaType !== 'application/x-www-form-urlencoded') return null;
+  if (typeof req.body === 'string') return new URLSearchParams(req.body).get(name);
+  if (req.body && typeof req.body === 'object') {
+    const value = req.body[name];
+    return typeof value === 'string' ? value : null;
   }
-  if (req.body && typeof req.body === 'object') return req.body.token;
   return null;
+}
+export function tokenFromFormBody(req) {
+  return formField(req, 'token');
+}
+
+// Signed, short-lived form proof lets Gmail/Android in-app browsers confirm a
+// reminder even when they send Origin: null. Unlike an Origin bypass, the proof
+// is tied to the exact email-link token and requested action.
+function formSignature(action, linkToken, expires) {
+  return crypto.createHmac('sha256', process.env.TOKEN_SECRET || '')
+    .update('reminder-confirm-form/v1\n' + action + '\n' + linkToken + '\n' + expires)
+    .digest('hex');
+}
+export function createReminderActionProof(action, linkToken) {
+  if (!process.env.TOKEN_SECRET || !['verify', 'cancel'].includes(action) || typeof linkToken !== 'string') {
+    throw new Error('Cannot prepare reminder confirmation form.');
+  }
+  const expires = String(Math.floor(Date.now() / 1000) + 15 * 60);
+  return { expires, proof: formSignature(action, linkToken, expires) };
+}
+export function isValidReminderActionProof(req, action, linkToken) {
+  if (!process.env.TOKEN_SECRET || !['verify', 'cancel'].includes(action) ||
+      typeof linkToken !== 'string' || !linkToken) return false;
+  const expires = formField(req, 'form_expires');
+  const suppliedProof = formField(req, 'form_proof');
+  if (!/^[0-9]{10,11}$/.test(String(expires || '')) ||
+      !/^[a-f0-9]{64}$/.test(String(suppliedProof || ''))) return false;
+  const now = Math.floor(Date.now() / 1000);
+  const t = Number(expires);
+  if (!Number.isSafeInteger(t) || t < now || t > now + 16 * 60) return false;
+  const expected = Buffer.from(formSignature(action, linkToken, expires), 'hex');
+  const supplied = Buffer.from(suppliedProof, 'hex');
+  return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
 }
 export function rateLimitHash(value, context) {
   return crypto.createHmac('sha256', process.env.RATE_LIMIT_SALT || '').update(context + ':' + String(value)).digest('hex');
