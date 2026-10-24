@@ -52,6 +52,56 @@ self.addEventListener('notificationclick', event => {
 
 const client = `
 (function () {
+  // Always share the public homepage, never a private My Reminders access token.
+  const shareButton = document.getElementById('shareWebsiteBtn');
+  if (shareButton) {
+    const publicUrl = 'https://reminder-website-three.vercel.app/';
+    shareButton.addEventListener('click', async () => {
+      shareButton.disabled = true;
+      try {
+        if (typeof navigator.share === 'function') {
+          try {
+            await navigator.share({
+              title: 'Free Reminder Website',
+              text: 'Set a free email reminder for any date or time.',
+              url: publicUrl
+            });
+            return;
+          } catch (error) {
+            if (error && error.name === 'AbortError') return;
+            // Some browsers expose Share but cannot complete it. Copy instead.
+          }
+        }
+        let copied = false;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(publicUrl);
+            copied = true;
+          } catch {}
+        }
+        if (!copied) {
+          const field = document.createElement('textarea');
+          field.value = publicUrl;
+          field.setAttribute('readonly', '');
+          field.style.position = 'fixed';
+          field.style.opacity = '0';
+          document.body.appendChild(field);
+          field.select();
+          try { copied = document.execCommand('copy'); } catch {}
+          field.remove();
+        }
+        if (copied) {
+          shareButton.textContent = '✓ Link copied';
+          setTimeout(() => { shareButton.textContent = '↗ Share'; }, 3000);
+        } else {
+          window.prompt('Copy this public website link:', publicUrl);
+        }
+      } finally {
+        shareButton.disabled = false;
+      }
+    });
+  }
+
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.register('/sw.js').catch(() => {});
   const button = document.getElementById('installAppBtn');
