@@ -89,20 +89,20 @@ const HOME_HTML = `<!doctype html>
 
       <form class="card" id="reminderForm" novalidate>
         <h2>Create your reminder</h2>
-        <p class="sub">We will send a confirmation email before activating it.</p>
+        <p class="sub">Set reminders at least 5 minutes from now. We recommend 15 minutes or more so you have time to confirm by email.</p>
         <div class="grid">
           <div><label for="recipient_name">Your name</label><input id="recipient_name" autocomplete="name" maxlength="80" required placeholder="David"></div>
           <div><label for="recipient_email">Email address</label><input id="recipient_email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com"></div>
           <div class="full"><label for="reminder_title">Reminder title</label><input id="reminder_title" maxlength="120" required placeholder="Business meeting"></div>
           <div class="full"><label for="reminder_message">Reminder details</label><textarea id="reminder_message" maxlength="1500" required placeholder="Meet John to discuss the new business agreement."></textarea></div>
-          <div><label for="event_local">Event date and time</label><input id="event_local" type="datetime-local" required><span class="hint">The date and time of the event.</span></div>
+          <div><label for="event_local">Event date and time</label><input id="event_local" type="datetime-local" required><span class="hint">At least 5 minutes from now. Allow 15 minutes or more for email confirmation.</span></div>
           <div><label for="timezone">Time zone</label><select id="timezone" required></select><span class="hint">Automatically detected; change it when needed.</span></div>
 
           <div class="full custom" id="customBox">
             <div class="custom-head"><input id="customEnabled" type="checkbox" checked><label for="customEnabled">Send at my own custom date and time</label></div>
             <label for="custom_reminder_local">Custom reminder date and time</label>
             <input id="custom_reminder_local" type="datetime-local" required>
-            <span class="hint">Choose any future date, time, or year. It must be no later than the event.</span>
+            <span class="hint">At least 5 minutes from now, and no later than the event. Allow time to confirm by email.</span>
           </div>
 
           <div class="full"><label>Optional additional reminder emails</label><div class="options">
@@ -164,15 +164,27 @@ const HOME_HTML = `<!doctype html>
       zoneSelect.appendChild(option);
     });
 
-    function localValue(date) {
-      return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+    function formatLocalMinuteInZone(date, zone) {
+      try {
+        const parts = Intl.DateTimeFormat('en-US', {
+          timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+        }).formatToParts(date);
+        const values = Object.fromEntries(parts.map(function(part) { return [part.type, part.value]; }));
+        return values.year + '-' + values.month + '-' + values.day + 'T' + values.hour + ':' + values.minute;
+      } catch {
+        // Use the browser's own local time if the requested time zone is unsupported.
+        return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+      }
     }
 
     function updateMinimumDates() {
-      const customMin = new Date(Date.now() + 5 * 60 * 1000);
-      const eventMin = new Date(Date.now() + 15 * 60 * 1000);
-      customInput.min = localValue(customMin);
-      eventInput.min = localValue(eventMin);
+      // datetime-local inputs have minute precision. Round up so the earliest
+      // displayed option is NEVER less than five real minutes into the future.
+      const minimum = new Date(Math.ceil((Date.now() + 5 * 60000) / 60000) * 60000);
+      const value = formatLocalMinuteInZone(minimum, zoneSelect.value || detectedZone);
+      customInput.min = value;
+      eventInput.min = value;
     }
 
     function toggleCustom() {
@@ -288,6 +300,7 @@ const HOME_HTML = `<!doctype html>
     }
 
     customEnabled.addEventListener('change', toggleCustom);
+    zoneSelect.addEventListener('change', updateMinimumDates);
     filesInput.addEventListener('change', updateFileSummary);
     updateMinimumDates();
     toggleCustom();
@@ -297,6 +310,8 @@ const HOME_HTML = `<!doctype html>
       event.preventDefault();
       statusBox.className = 'status';
       statusBox.textContent = '';
+      // Prevent stale minimums when a user leaves the form open for a long time.
+      updateMinimumDates();
       if (!form.reportValidity()) return;
 
       if (![customEnabled, oneMonth, oneWeek, oneDay].some(function(box){ return box.checked; })) {
@@ -908,17 +923,18 @@ async function createReminder(req, res) {
     if (totalEncryptedBytes > MAX_ENCRYPTED_TOTAL_BYTES) return sendJson(res, 400, { error: 'The encrypted attachments are too large.' });
 
     const now = DateTime.utc();
+    const earliestReminder = now.plus({ minutes: 5 });
     const event = DateTime.fromISO(eventLocal, { zone: timezone });
     if (!event.isValid) return sendJson(res, 400, { error: 'Choose a valid event date and time.' });
-    if (event.toUTC() <= now.plus({ minutes: 15 })) {
-      return sendJson(res, 400, { error: 'The event must be at least 15 minutes in the future.' });
+    if (event.toUTC() < earliestReminder) {
+      return sendJson(res, 400, { error: 'The event must be at least 5 minutes in the future. We recommend 15 minutes for email confirmation.' });
     }
 
     let customReminder = null;
     if (remindCustom) {
       customReminder = DateTime.fromISO(customReminderLocal, { zone: timezone });
       if (!customReminder.isValid) return sendJson(res, 400, { error: 'Choose a valid custom reminder date and time.' });
-      if (customReminder.toUTC() <= now.plus({ minutes: 4 })) {
+      if (customReminder.toUTC() < earliestReminder) {
         return sendJson(res, 400, { error: 'The custom reminder must be at least 5 minutes in the future.' });
       }
       if (customReminder.toUTC() > event.toUTC()) {
@@ -926,14 +942,14 @@ async function createReminder(req, res) {
       }
     }
 
-    if (remindOneMonth && event.minus({ months: 1 }).toUTC() <= now) {
-      return sendJson(res, 400, { error: 'The one-month reminder time has already passed. Uncheck it or choose a later event.' });
+    if (remindOneMonth && event.minus({ months: 1 }).toUTC() < earliestReminder) {
+      return sendJson(res, 400, { error: 'The one-month reminder must be at least 5 minutes in the future. Uncheck it or choose a later event.' });
     }
-    if (remindOneWeek && event.minus({ days: 7 }).toUTC() <= now) {
-      return sendJson(res, 400, { error: 'The one-week reminder time has already passed. Uncheck it or choose a later event.' });
+    if (remindOneWeek && event.minus({ days: 7 }).toUTC() < earliestReminder) {
+      return sendJson(res, 400, { error: 'The one-week reminder must be at least 5 minutes in the future. Uncheck it or choose a later event.' });
     }
-    if (remindOneDay && event.minus({ days: 1 }).toUTC() <= now) {
-      return sendJson(res, 400, { error: 'The one-day reminder time has already passed. Uncheck it or choose a later event.' });
+    if (remindOneDay && event.minus({ days: 1 }).toUTC() < earliestReminder) {
+      return sendJson(res, 400, { error: 'The one-day reminder must be at least 5 minutes in the future. Uncheck it or choose a later event.' });
     }
 
     stage = 'initialize_services';
