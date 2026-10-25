@@ -28,6 +28,7 @@ function sendHtml(res, status, html) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
   return res.end(html);
 }
 
