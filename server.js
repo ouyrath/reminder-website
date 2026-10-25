@@ -1280,35 +1280,23 @@ async function sendReminders(req, res) {
 async function health(req, res) {
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
 
-  const checks = {
-    supabaseUrl: Boolean(String(process.env.SUPABASE_URL || '').trim()),
-    supabaseSecretKey: Boolean(String(process.env.SUPABASE_SECRET_KEY || '').trim()),
-    resendApiKey: Boolean(String(process.env.RESEND_API_KEY || '').trim()),
-    emailFrom: Boolean(String(process.env.EMAIL_FROM || '').trim()),
-    appUrl: Boolean(String(process.env.APP_URL || '').trim()),
-    tokenSecret: Boolean(String(process.env.TOKEN_SECRET || '').trim()),
-    rateLimitSalt: Boolean(String(process.env.RATE_LIMIT_SALT || '').trim()),
-    cronSecret: Boolean(String(process.env.CRON_SECRET || '').trim())
-  };
+  // Keep operational diagnostics on the server, not in a public API response.
+  const required = [
+    'SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'RESEND_API_KEY', 'EMAIL_FROM',
+    'APP_URL', 'TOKEN_SECRET', 'RATE_LIMIT_SALT', 'CRON_SECRET'
+  ];
+  if (!required.every(name => Boolean(String(process.env[name] || '').trim()))) {
+    console.error('health check: required configuration is incomplete');
+    return sendJson(res, 503, { ok: false, error: 'Service temporarily unavailable.' });
+  }
 
   try {
     const query = queryString({ select: 'id', limit: 1 });
     await supabaseRequest('reminders?' + query);
-    return sendJson(res, 200, {
-      ok: Object.values(checks).every(Boolean),
-      checks,
-      database: 'connected'
-    });
+    return sendJson(res, 200, { ok: true, database: 'connected' });
   } catch (error) {
-    return sendJson(res, 500, {
-      ok: false,
-      checks,
-      database: {
-        message: error?.message || String(error),
-        status: error?.status || null,
-        details: error?.details || null
-      }
-    });
+    console.error('health check: database unavailable', error?.name || 'unknown');
+    return sendJson(res, 503, { ok: false, error: 'Service temporarily unavailable.' });
   }
 }
 
