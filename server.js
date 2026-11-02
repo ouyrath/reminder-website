@@ -463,9 +463,11 @@ function getStorageAdmin() {
 
 async function supabaseRequest(path, options = {}) {
   const { url, key } = supabaseConfig();
+  // Modern Supabase sb_secret_ keys are opaque API keys, not JWTs.
+  // Send them via apikey only; keep Bearer for legacy service_role JWTs.
   const headers = {
     apikey: key,
-    Authorization: 'Bearer ' + key,
+    ...(key.startsWith('sb_secret_') ? {} : { Authorization: 'Bearer ' + key }),
     Accept: 'application/json',
     ...options.headers
   };
@@ -1033,6 +1035,18 @@ async function createReminder(req, res) {
     if (reminderId) {
       try { await deleteAttachmentsForReminder(reminderId); } catch {}
       try { await deleteReminderById(reminderId); } catch {}
+    }
+
+    // A Supabase 401 during a database/storage step is an authentication
+    // failure, not evidence that the IP/email rate limit was reached.
+    const databaseStages = new Set([
+      'rate_limit_ip', 'rate_limit_email', 'insert_reminder',
+      'insert_attachments', 'create_upload_urls'
+    ]);
+    if (databaseStages.has(stage) && error?.status === 401) {
+      return sendJson(res, 503, {
+        error: 'Reminder service is temporarily unavailable. Please contact the website owner. Error code: DB-AUTH.'
+      });
     }
 
     const validationMessage = stage === 'validate_request' && error?.message ? error.message : null;
